@@ -1,0 +1,84 @@
+"""Fetch BTC OHLCV candles from Binance (no key required)."""
+import time
+import logging
+import requests
+import pandas as pd
+from datetime import datetime, timezone
+from agent.database.models import get_session, BTCCandle
+import config
+
+log = logging.getLogger(__name__)
+
+BINANCE_KLINES = f"{config.BINANCE_API}/api/v3/klines"
+
+
+def fetch_candles(symbol: str = "BTCUSDT", interval: str = "15m",
+                  limit: int = 200) -> pd.DataFrame:
+    """Return DataFrame with columns: timestamp, open, high, low, close, volume."""
+    try:
+        resp = requests.get(
+            BINANCE_KLINES,
+            params={"symbol": symbol, "interval": interval, "limit": limit},
+            timeout=10
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        df = pd.DataFrame(raw, columns=[
+            "open_time", "open", "high", "low", "close", "volume",
+            "close_time", "quote_vol", "trades", "taker_base", "taker_quote", "ignore"
+        ])
+        df["timestamp"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col])
+        df = df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
+        df.set_index("timestamp", inplace=True)
+        return df
+    except Exception as e:
+        log.error(f"Binance fetch error: {e}")
+        return _load_from_db()
+
+
+def _load_from_db() -> pd.DataFrame:
+    session = get_session()
+    candles = session.query(BTCCandle).order_by(BTCCandle.timestamp.desc()).limit(200).all()
+    session.close()
+    if not candles:
+        return pd.DataFrame()
+    rows = [{"timestamp": c.timestamp, "open": c.open, "high": c.high,
+             "low": c.low, "close": c.close, "volume": c.volume} for c in reversed(candles)]
+    df = pd.DataFrame(rows)
+    df.set_index("timestamp", inplace=True)
+    return df
+
+
+def store_candles(df: pd.DataFrame):
+    session = get_session()
+    try:
+        for ts, row in df.iterrows():
+            exists = session.query(BTCCandle).filter_by(
+                timestamp=ts.to_pydatetime().replace(tzinfo=None)).first()
+            if not exists:
+                c = BTCCandle(
+                    timestamp=ts.to_pydatetime().replace(tzinfo=None),
+                    open=row.open, high=row.high,
+                    low=row.low, close=row.close, volume=row.volume
+                )
+                session.add(c)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        log.error(f"store_candles error: {e}")
+    finally:
+        session.close()
+
+
+def get_current_btc_price() -> float:
+    try:
+        resp = requests.get(
+            f"{config.BINANCE_API}/api/v3/ticker/price",
+            params={"symbol": "BTCUSDT"}, timeout=5
+        )
+        return float(resp.json()["price"])
+    except Exception as e:
+        log.error(f"Price fetch error: {e}")
+        return 0.0

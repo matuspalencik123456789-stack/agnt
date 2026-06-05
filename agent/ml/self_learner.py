@@ -1,0 +1,210 @@
+"""
+Self-learning module.
+Uses completed trade history to update strategy weights via a bandit-style
+Bayesian update + gradient-boosted meta-model for feature-based edge prediction.
+"""
+import logging
+import pickle
+import os
+from datetime import datetime
+from typing import Dict, Tuple
+
+import numpy as np
+import pandas as pd
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+
+from agent.database.models import get_session, StrategyWeight, Trade
+import config
+
+log = logging.getLogger(__name__)
+
+STRATEGY_NAMES = ["rsi", "macd", "bollinger", "momentum", "vwap", "adx"]
+
+
+class SelfLearner:
+    def __init__(self):
+        self.model: GradientBoostingClassifier | None = None
+        self.scaler = StandardScaler()
+        self.is_fitted = False
+        self._load_model()
+
+    # ── Weight management ────────────────────────────────────────────────────
+
+    def get_weights(self) -> Dict[str, float]:
+        session = get_session()
+        try:
+            weights = {}
+            for name in STRATEGY_NAMES:
+                row = session.query(StrategyWeight).filter_by(name=name).first()
+                if row:
+                    weights[name] = row.weight
+                else:
+                    weights[name] = 1.0
+                    session.add(StrategyWeight(name=name, weight=1.0))
+            session.commit()
+            return weights
+        finally:
+            session.close()
+
+    def update_weights_from_history(self):
+        """Recompute strategy weights based on resolved trade outcomes."""
+        session = get_session()
+        try:
+            trades = session.query(Trade).filter(
+                Trade.resolved == True,
+                Trade.pnl_usd != None
+            ).order_by(Trade.closed_at.asc()).all()
+
+            if len(trades) < config.MIN_TRADES_TO_LEARN:
+                log.info(f"Not enough resolved trades ({len(trades)}) to learn yet.")
+                return
+
+            strategy_stats: Dict[str, Dict] = {
+                name: {"wins": 0, "total": 0, "total_roi": 0.0}
+                for name in STRATEGY_NAMES
+            }
+
+            decay = config.STRATEGY_DECAY
+            n = len(trades)
+
+            for i, trade in enumerate(trades):
+                strat = trade.strategy_used or "ensemble"
+                if strat not in strategy_stats:
+                    continue
+                w = decay ** (n - 1 - i)   # recent trades matter more
+                won = (trade.pnl_usd or 0) > 0
+                strategy_stats[strat]["wins"]      += w * int(won)
+                strategy_stats[strat]["total"]     += w
+                strategy_stats[strat]["total_roi"] += w * (trade.roi_pct or 0)
+
+            for name, stats in strategy_stats.items():
+                if stats["total"] == 0:
+                    continue
+                win_rate = stats["wins"] / stats["total"]
+                avg_roi  = stats["total_roi"] / stats["total"]
+                # weight = win_rate * (1 + avg_roi / 100), clamp 0.1–3.0
+                new_weight = max(0.1, min(3.0, win_rate * (1 + avg_roi / 100)))
+
+                row = session.query(StrategyWeight).filter_by(name=name).first()
+                if not row:
+                    row = StrategyWeight(name=name)
+                    session.add(row)
+                row.weight     = round(new_weight, 4)
+                row.win_rate   = round(win_rate, 4)
+                row.avg_roi    = round(avg_roi, 4)
+                row.trade_cnt  = int(stats["total"])
+                row.updated_at = datetime.utcnow()
+                log.info(f"  {name}: weight={new_weight:.3f} win_rate={win_rate:.2%} avg_roi={avg_roi:.2f}%")
+
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            log.error(f"update_weights error: {e}")
+        finally:
+            session.close()
+
+    # ── Meta-model (GBM edge predictor) ─────────────────────────────────────
+
+    def _build_features(self, trade: Trade) -> np.ndarray | None:
+        sig = trade.signal_data or {}
+        sub = sig.get("sub", {})
+        row = []
+        for name in STRATEGY_NAMES:
+            info = sub.get(name, {})
+            row.append(float(info.get("conf", 0.0)))
+            row.append(float(info.get("edge", 0.0)))
+            row.append(1.0 if info.get("dir") == trade.side else -1.0 if info.get("dir") else 0.0)
+        row.append(float(sig.get("yes_score", 0.0)))
+        row.append(float(sig.get("no_score",  0.0)))
+        row.append(float(trade.price or 0.5))
+        return np.array(row, dtype=np.float32)
+
+    def train_meta_model(self):
+        session = get_session()
+        try:
+            trades = session.query(Trade).filter(
+                Trade.resolved == True,
+                Trade.signal_data != None
+            ).all()
+
+            if len(trades) < config.MIN_TRADES_TO_LEARN:
+                return
+
+            X, y = [], []
+            for t in trades:
+                feats = self._build_features(t)
+                if feats is None:
+                    continue
+                X.append(feats)
+                y.append(1 if (t.pnl_usd or 0) > 0 else 0)
+
+            X = np.array(X)
+            y = np.array(y)
+
+            self.scaler.fit(X)
+            Xs = self.scaler.transform(X)
+
+            self.model = GradientBoostingClassifier(
+                n_estimators=200, max_depth=3, learning_rate=0.05, random_state=42
+            )
+            self.model.fit(Xs, y)
+            self.is_fitted = True
+            self._save_model()
+            log.info(f"Meta-model trained on {len(X)} trades.")
+        except Exception as e:
+            log.error(f"train_meta_model error: {e}")
+        finally:
+            session.close()
+
+    def predict_win_probability(self, signal_data: dict, side: str, price: float) -> float:
+        """Return estimated win probability using the meta-model (fallback: 0.5)."""
+        if not self.is_fitted or self.model is None:
+            return 0.5
+        try:
+            dummy_trade = type("T", (), {
+                "signal_data": signal_data, "side": side, "price": price
+            })()
+            feats = self._build_features(dummy_trade)
+            Xs = self.scaler.transform(feats.reshape(1, -1))
+            prob = self.model.predict_proba(Xs)[0][1]
+            return float(prob)
+        except Exception as e:
+            log.warning(f"predict error: {e}")
+            return 0.5
+
+    def get_strategy_report(self) -> pd.DataFrame:
+        session = get_session()
+        try:
+            rows = session.query(StrategyWeight).all()
+            data = [{
+                "Strategy": r.name,
+                "Weight":   round(r.weight, 3),
+                "Win Rate": f"{r.win_rate:.1%}" if r.win_rate else "N/A",
+                "Avg ROI":  f"{r.avg_roi:.1f}%" if r.avg_roi else "N/A",
+                "Trades":   r.trade_cnt,
+                "Updated":  r.updated_at.strftime("%Y-%m-%d %H:%M") if r.updated_at else "",
+            } for r in rows]
+            return pd.DataFrame(data)
+        finally:
+            session.close()
+
+    # ── Persistence ──────────────────────────────────────────────────────────
+
+    def _save_model(self):
+        os.makedirs(os.path.dirname(config.MODEL_PATH), exist_ok=True)
+        with open(config.MODEL_PATH, "wb") as f:
+            pickle.dump({"model": self.model, "scaler": self.scaler,
+                         "is_fitted": self.is_fitted}, f)
+
+    def _load_model(self):
+        if os.path.exists(config.MODEL_PATH):
+            try:
+                with open(config.MODEL_PATH, "rb") as f:
+                    state = pickle.load(f)
+                self.model    = state["model"]
+                self.scaler   = state["scaler"]
+                self.is_fitted = state["is_fitted"]
+                log.info("Meta-model loaded from disk.")
+            except Exception as e:
+                log.warning(f"Could not load model: {e}")
