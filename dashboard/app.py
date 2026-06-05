@@ -100,8 +100,17 @@ with st.sidebar:
     st.caption(f"Kelly fraction: `{config.KELLY_FRACTION:.0%}`")
 
     st.divider()
-    mode = "🟢 Live" if config.POLYMARKET_PRIVATE_KEY else "🟡 Paper"
+    mode = "🟢 Live" if config.POLYMARKET_PRIVATE_KEY else "🟡 Paper (testing)"
     st.markdown(f"**Mode:** {mode}")
+
+    ws_on = "🟢 ON" if config.ENABLE_WEBSOCKET else "⚪ OFF"
+    st.markdown(f"**WebSocket feed:** {ws_on}")
+    try:
+        from agent.websocket_feed import LIVE
+        _wsp = LIVE.get_btc_price()
+        st.caption(f"Live BTC (WS): ${_wsp:,.0f}" if _wsp else "Live BTC (WS): waiting…")
+    except Exception:
+        pass
 
     st.divider()
     st.markdown("**🔄 Active 15-min slug**")

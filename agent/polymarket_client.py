@@ -104,7 +104,14 @@ class PolymarketClient:
             return None
 
     def get_mid_price(self, token_id: str) -> Optional[float]:
-        """Return mid price from best bid/ask."""
+        """Return mid price — live WebSocket book first, REST as fallback."""
+        try:
+            from agent.websocket_feed import LIVE
+            live_mid = LIVE.get_mid(token_id)
+            if live_mid:
+                return live_mid
+        except Exception:
+            pass
         book = self.get_book(token_id)
         if not book:
             return None

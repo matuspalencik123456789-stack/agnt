@@ -7,6 +7,7 @@ from typing import List, Dict
 from agent.polymarket_client import PolymarketClient
 from agent.market_data import fetch_candles, store_candles, get_current_btc_price
 from agent.market_tracker import MarketTracker
+from agent.websocket_feed import FeedManager, LIVE
 from agent.strategies.ensemble import EnsembleStrategy
 from agent.ml.self_learner import SelfLearner
 from agent.risk_manager import RiskManager
@@ -16,16 +17,39 @@ import config
 log = logging.getLogger(__name__)
 
 
+def _market_token_ids(market: Dict) -> List[str]:
+    """Extract YES/NO token ids from a market dict."""
+    tokens = market.get("tokens", market.get("clobTokenIds", []))
+    ids = []
+    for t in (tokens if isinstance(tokens, list) else []):
+        if isinstance(t, dict):
+            ids.append(t.get("token_id", t.get("tokenId", "")))
+        elif isinstance(t, str):
+            ids.append(t)
+    return [i for i in ids if i]
+
+
 class Trader:
     def __init__(self):
         self.poly     = PolymarketClient()
         self.tracker  = MarketTracker()
+        self.feeds    = FeedManager()
         self.ensemble = EnsembleStrategy()
         self.learner  = SelfLearner()
         self.risk     = RiskManager()
         self.cycle    = 0
         # slug currently being traded, so we only act once per new slug
         self._traded_slug: str = None
+        # start live WebSocket feeds (Binance price + Polymarket books)
+        self.feeds.start(on_kline_close=self._on_kline_close)
+
+    def _on_kline_close(self, candle: dict):
+        """Called by the Binance WS thread whenever a 15m candle closes."""
+        log.info(f"[ws] 15m candle closed @ {candle['close']:.0f} — re-evaluating slug.")
+        try:
+            self.roll_check()
+        except Exception as e:
+            log.warning(f"on_kline_close roll error: {e}")
 
     # ── Main loop step ───────────────────────────────────────────────────────
 
@@ -94,6 +118,9 @@ class Trader:
             return
 
         slug = market.get("slug") or market.get("conditionId")
+
+        # Point the live WS order-book feed at this slug's tokens
+        self.feeds.subscribe_tokens(_market_token_ids(market))
 
         # Don't open new positions in the final seconds before resolution
         if not self.tracker.is_tradeable(market):

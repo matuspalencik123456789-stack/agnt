@@ -73,6 +73,15 @@ def store_candles(df: pd.DataFrame):
 
 
 def get_current_btc_price() -> float:
+    # 1. Prefer the live WebSocket price (sub-second freshness)
+    try:
+        from agent.websocket_feed import LIVE
+        live_price = LIVE.get_btc_price()
+        if live_price:
+            return live_price
+    except Exception:
+        pass
+    # 2. Fall back to REST if the WS feed is stale/unavailable
     try:
         resp = requests.get(
             f"{config.BINANCE_API}/api/v3/ticker/price",

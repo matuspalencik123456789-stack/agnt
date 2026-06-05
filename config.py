@@ -34,6 +34,13 @@ MODEL_PATH   = os.getenv("MODEL_PATH", "data/model.pkl")
 BTC_SYMBOL  = "BTC/USDT"
 BINANCE_API = "https://api.binance.com"
 
+# ── WebSocket live feeds ─────────────────────────────────────────────────────
+ENABLE_WEBSOCKET   = os.getenv("ENABLE_WEBSOCKET", "true").lower() == "true"
+BINANCE_WS         = os.getenv("BINANCE_WS", "wss://stream.binance.com:9443/ws")
+POLYMARKET_WS      = os.getenv("POLYMARKET_WS", "wss://ws-subscriptions-clob.polymarket.com/ws/market")
+WS_RECONNECT_MAX   = int(os.getenv("WS_RECONNECT_MAX", "8"))      # max backoff exponent cap (seconds = 2^n)
+WS_STALE_SECONDS   = int(os.getenv("WS_STALE_SECONDS", "30"))     # treat feed as stale after this
+
 # BTC Polymarket market search keywords
 BTC_MARKET_KEYWORDS = ["bitcoin", "btc", "BTC"]
 
