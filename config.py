@@ -36,3 +36,14 @@ BINANCE_API = "https://api.binance.com"
 
 # BTC Polymarket market search keywords
 BTC_MARKET_KEYWORDS = ["bitcoin", "btc", "BTC"]
+
+# ── 15-min slug rolling ──────────────────────────────────────────────────────
+# Phrases that identify the recurring short-duration BTC markets.
+ROLLING_MARKET_PHRASES = ["up or down", "higher or lower", "15 min", "15-min", "15m"]
+# A market counts as a "15-min" market if (endDate - startDate) is within this
+# window (seconds). Covers 15-min markets with a little slack.
+ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "1500"))   # 25 min slack
+# How often (seconds) to check whether the active slug has ended and roll to the next.
+ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "60"))
+# Seconds before end to stop opening new positions on the current slug.
+ROLL_CUTOFF_SECONDS = int(os.getenv("ROLL_CUTOFF_SECONDS", "60"))

@@ -6,6 +6,7 @@ from typing import List, Dict
 
 from agent.polymarket_client import PolymarketClient
 from agent.market_data import fetch_candles, store_candles, get_current_btc_price
+from agent.market_tracker import MarketTracker
 from agent.strategies.ensemble import EnsembleStrategy
 from agent.ml.self_learner import SelfLearner
 from agent.risk_manager import RiskManager
@@ -18,10 +19,13 @@ log = logging.getLogger(__name__)
 class Trader:
     def __init__(self):
         self.poly     = PolymarketClient()
+        self.tracker  = MarketTracker()
         self.ensemble = EnsembleStrategy()
         self.learner  = SelfLearner()
         self.risk     = RiskManager()
         self.cycle    = 0
+        # slug currently being traded, so we only act once per new slug
+        self._traded_slug: str = None
 
     # ── Main loop step ───────────────────────────────────────────────────────
 
@@ -44,28 +48,63 @@ class Trader:
         btc_price = get_current_btc_price()
         log.info(f"BTC: ${btc_price:,.0f}  |  candles: {len(candles)}")
 
-        # 3. Fetch active BTC markets
-        markets = self.poly.get_btc_markets()
-        if not markets:
-            log.info("No BTC markets found.")
-            return
-        log.info(f"Found {len(markets)} BTC markets.")
-
-        # 4. Snapshot markets into DB
-        self._snapshot_markets(markets)
-
-        # 5. Generate signals and evaluate trades
+        # 3. Lock onto the current rolling 15-min BTC slug and trade it
         balance = self.poly.get_balance() or 1000.0  # fallback for paper trading
-        for market in markets[:10]:  # process top 10 markets per cycle
-            self._evaluate_market(market, candles, balance)
+        self._trade_active_slug(candles, balance)
 
-        # 6. Periodically retrain the meta-model
+        # 4. Periodically retrain the meta-model
         if self.cycle % 10 == 0:
             log.info("Retraining meta-model...")
             self.learner.train_meta_model()
             self.learner.update_weights_from_history()
 
         log.info(f"Cycle #{self.cycle} complete.")
+
+    # ── Rolling slug handling ────────────────────────────────────────────────
+
+    def roll_check(self):
+        """
+        Fast hand-off check (runs every ROLL_CHECK_SECONDS). The moment the
+        active 15-min slug ends, this locks onto the next one and trades it
+        immediately — no waiting for the next 15-min cycle.
+        """
+        market = self.tracker.get_current_market()
+        if not market:
+            return
+
+        slug = market.get("slug") or market.get("conditionId")
+        secs = self.tracker.seconds_to_end(market)
+
+        # New slug we haven't traded yet → jump on it right away
+        if slug != self._traded_slug:
+            log.info(f"[roll] New active slug detected: {slug} "
+                     f"({secs:.0f}s to end)" if secs is not None else
+                     f"[roll] New active slug detected: {slug}")
+            candles = fetch_candles()
+            if candles.empty:
+                return
+            balance = self.poly.get_balance() or 1000.0
+            self._trade_active_slug(candles, balance, prefetched=market)
+
+    def _trade_active_slug(self, candles, balance: float, prefetched: Dict = None):
+        """Evaluate and (maybe) trade the current rolling 15-min BTC market."""
+        market = prefetched or self.tracker.get_current_market()
+        if not market:
+            log.info("No active rolling 15-min BTC slug — nothing to trade.")
+            return
+
+        slug = market.get("slug") or market.get("conditionId")
+
+        # Don't open new positions in the final seconds before resolution
+        if not self.tracker.is_tradeable(market):
+            secs = self.tracker.seconds_to_end(market)
+            log.info(f"[roll] Slug {slug} too close to end ({secs:.0f}s) — "
+                     f"skipping new entries.")
+            return
+
+        self._snapshot_markets([market])
+        self._evaluate_market(market, candles, balance)
+        self._traded_slug = slug
 
     # ── Market evaluation ────────────────────────────────────────────────────
 

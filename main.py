@@ -76,6 +76,14 @@ def run_agent():
         id="resolution_check",
         max_instances=1,
     )
+    # Fast hand-off: roll onto the next 15-min BTC slug the instant the current ends
+    scheduler.add_job(
+        trader.roll_check,
+        "interval",
+        seconds=config.ROLL_CHECK_SECONDS,
+        id="roll_check",
+        max_instances=1,
+    )
 
     log.info(f"Scheduler started — trading every {config.TRADING_INTERVAL_MINUTES} minutes.")
     try:

@@ -103,6 +103,23 @@ with st.sidebar:
     mode = "🟢 Live" if config.POLYMARKET_PRIVATE_KEY else "🟡 Paper"
     st.markdown(f"**Mode:** {mode}")
 
+    st.divider()
+    st.markdown("**🔄 Active 15-min slug**")
+    try:
+        from agent.market_tracker import MarketTracker
+        _tracker = MarketTracker()
+        _active = _tracker.get_current_market()
+        if _active:
+            _slug = _active.get("slug") or _active.get("conditionId")
+            _secs = _tracker.seconds_to_end(_active)
+            st.caption(f"`{_slug}`")
+            if _secs is not None:
+                st.caption(f"⏱️ ends in {int(max(_secs,0))}s — auto-rolls next")
+        else:
+            st.caption("No active rolling slug found.")
+    except Exception as e:
+        st.caption(f"tracker error: {e}")
+
 
 # ── Main layout ──────────────────────────────────────────────────────────────
 st.title("📈 Polymarket BTC 15-min Trading Agent")
