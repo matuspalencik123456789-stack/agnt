@@ -23,6 +23,8 @@ MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.01"))   # 1%
 # Minimum directional conviction (|P(up)-0.5|) for the outcome model to act.
 STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.06"))
 STAT_MIN_MISPRICING      = float(os.getenv("STAT_MIN_MISPRICING", "0.03"))
+# Minimum professional confluence score (|−1..+1|) for price-action to act.
+PRICE_ACTION_MIN_SCORE   = float(os.getenv("PRICE_ACTION_MIN_SCORE", "0.35"))
 
 # ── Trade selectivity ("should I bother trading right now?") ──────────────────
 # Minimum quality score (confidence × edge) for the FIRST entry on a slug.

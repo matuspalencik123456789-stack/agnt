@@ -9,6 +9,7 @@ from agent.strategies.indicators import rsi, macd, bollinger, adx, vwap
 from agent.strategies.outcome_model import (
     realized_vol_per_step, drift_per_step, window_open_price, prob_up,
 )
+from agent.strategies.price_action import read_chart
 import config
 
 
@@ -353,3 +354,39 @@ class StatOutcomeStrategy(BaseStrategy):
             return self._pass(details)
 
         return Signal(self.name, bet_side, min(model_p, 1.0), mispricing, details)
+
+
+class PriceActionStrategy(BaseStrategy):
+    """
+    Reads the chart like a professional discretionary trader: market structure
+    (Dow Theory), candlestick patterns, support/resistance, RSI divergence and
+    volume — combined into a single confluence score. Trades only when several
+    independent reads agree (the professional 'confluence' principle).
+    """
+    name = "price_action"
+
+    def generate_signal(self, candles, yes_price, no_price, market_meta):
+        if len(candles) < 30:
+            return self._pass({"reason": "not enough candles"})
+
+        read = read_chart(candles)
+        score = read["score"]                      # -1 (bearish) … +1 (bullish)
+        direction, _ = _implied_btc_direction(market_meta)
+
+        # need a minimum confluence to act
+        min_score = float(getattr(config, "PRICE_ACTION_MIN_SCORE", 0.35))
+        if abs(score) < min_score:
+            read["reason"] = f"weak confluence {score:+.2f}"
+            return self._pass(read)
+
+        bullish = score > 0
+        if direction == "below":           # YES means price ends BELOW
+            bet_side = "YES" if not bullish else "NO"
+        else:                              # up/down or above → YES means UP
+            bet_side = "YES" if bullish else "NO"
+
+        confidence = min(0.5 + abs(score) * 0.45, 0.95)
+        price = yes_price if bet_side == "YES" else no_price
+        edge  = max(0.0, confidence - price)
+        read["side"] = bet_side
+        return Signal(self.name, bet_side, confidence, edge, read)

@@ -6,7 +6,8 @@ import pandas as pd
 from agent.strategies.base import BaseStrategy, Signal
 from agent.strategies.technical import (
     RSIStrategy, MACDStrategy, BollingerStrategy,
-    MomentumStrategy, VWAPStrategy, ADXStrategy, StatOutcomeStrategy
+    MomentumStrategy, VWAPStrategy, ADXStrategy, StatOutcomeStrategy,
+    PriceActionStrategy,
 )
 import config
 
@@ -15,14 +16,15 @@ log = logging.getLogger(__name__)
 ALL_STRATEGIES: List[BaseStrategy] = [
     RSIStrategy(), MACDStrategy(), BollingerStrategy(),
     MomentumStrategy(), VWAPStrategy(), ADXStrategy(),
-    StatOutcomeStrategy(),
+    StatOutcomeStrategy(), PriceActionStrategy(),
 ]
 
-# The statistical outcome model is the most principled signal — start it heavier.
+# The statistical outcome model and the pro price-action read are the most
+# principled signals — start them heavier.
 DEFAULT_WEIGHTS = {
     "rsi": 1.0, "macd": 1.0, "bollinger": 1.0,
     "momentum": 1.0, "vwap": 1.0, "adx": 1.0,
-    "stat_outcome": 1.5,
+    "stat_outcome": 1.5, "price_action": 1.5,
 }
 
 

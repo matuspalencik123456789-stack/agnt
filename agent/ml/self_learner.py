@@ -20,7 +20,8 @@ import config
 
 log = logging.getLogger(__name__)
 
-STRATEGY_NAMES = ["rsi", "macd", "bollinger", "momentum", "vwap", "adx", "stat_outcome"]
+STRATEGY_NAMES = ["rsi", "macd", "bollinger", "momentum", "vwap", "adx",
+                  "stat_outcome", "price_action"]
 
 
 class SelfLearner:
@@ -35,7 +36,7 @@ class SelfLearner:
     def get_weights(self) -> Dict[str, float]:
         session = get_session()
         try:
-            seed = {"stat_outcome": 1.5}   # outcome model starts slightly heavier
+            seed = {"stat_outcome": 1.5, "price_action": 1.5}   # principled signals start heavier
             weights = {}
             for name in STRATEGY_NAMES:
                 row = session.query(StrategyWeight).filter_by(name=name).first()
