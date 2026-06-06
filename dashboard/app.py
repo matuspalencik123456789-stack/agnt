@@ -292,10 +292,17 @@ with col_op:
             open_df["unrealized"] = open_df.apply(
                 lambda r: round((1.0 - r["price"]) * r["shares"], 2), axis=1
             )
+            show = open_df[["timestamp", "question", "side", "price", "size_usd", "unrealized"]].copy()
+            show["timestamp"] = pd.to_datetime(show["timestamp"]).dt.strftime("%m-%d %H:%M")
+            show["question"] = show["question"].str[:60]
+
+            def _pos_color(row):
+                c = "#0d3323" if row["unrealized"] >= 0 else "#3b0d0d"
+                return [f"background-color: {c}"] * len(row)
+
             st.dataframe(
-                open_df[["timestamp", "question", "side", "price", "size_usd", "unrealized"]]
-                .style.background_gradient(subset=["unrealized"], cmap="RdYlGn"),
-                use_container_width=True,
+                show.style.apply(_pos_color, axis=1),
+                use_container_width=True, hide_index=True,
             )
         else:
             st.info("No open positions.")
