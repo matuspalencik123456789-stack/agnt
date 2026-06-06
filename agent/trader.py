@@ -42,6 +42,7 @@ class Trader:
         # track the active slug + how many trades we've opened on it (cap per slug)
         self._current_slug: str = None
         self._slug_trades: int  = 0
+        self._last_entry_ts: float = 0.0   # for the per-slug entry cooldown
         # start live WebSocket feeds (Binance price + Polymarket books)
         self.feeds.start(on_kline_close=self._on_kline_close)
 
@@ -126,6 +127,7 @@ class Trader:
         if slug != self._current_slug:
             self._current_slug = slug
             self._slug_trades  = 0
+            self._last_entry_ts = 0.0
 
         # Point the live WS order-book feed at this slug's tokens
         self.feeds.subscribe_tokens(_market_token_ids(market))
@@ -146,6 +148,29 @@ class Trader:
         if traded:
             self._slug_trades += 1
             log.info(f"  [slug {slug}] trade {self._slug_trades}/{config.MAX_TRADES_PER_SLUG}")
+
+    # ── Selectivity ("should I trade now, or wait for a better setup?") ──────
+
+    def _is_worth_trading(self, confidence: float, edge: float) -> tuple[bool, str]:
+        """
+        Decide whether this setup justifies spending one of the limited per-slug
+        trade slots *right now*. The bar rises with each entry already taken and
+        a cooldown prevents firing several trades back-to-back.
+        """
+        quality = confidence * max(edge, 0.0)
+
+        # cooldown since the last entry on this slug
+        cd = config.ENTRY_COOLDOWN_SECONDS
+        since = time.time() - self._last_entry_ts
+        if self._last_entry_ts and since < cd:
+            return False, f"cooldown {since:.0f}s/{cd}s, quality={quality:.4f}"
+
+        # escalating quality bar: 1st entry cheapest, each extra one stricter
+        bar = config.ENTRY_QUALITY_MIN * (config.ENTRY_QUALITY_ESCALATION ** self._slug_trades)
+        if quality < bar:
+            return False, f"quality {quality:.4f} < bar {bar:.4f} (entry #{self._slug_trades+1})"
+
+        return True, f"quality {quality:.4f} ≥ bar {bar:.4f}"
 
     # ── Market evaluation ────────────────────────────────────────────────────
 
@@ -173,6 +198,15 @@ class Trader:
         )
         blended_conf = 0.7 * signal.confidence + 0.3 * ml_prob
 
+        # ── "Is it worth trading right now?" — selectivity gate ───────────────
+        # The agent doesn't blow all its slots on the first qualifying signals.
+        # It scores the setup and only spends a slot on a genuinely good one,
+        # escalating the bar for each extra entry and respecting a cooldown.
+        worth, why = self._is_worth_trading(blended_conf, signal.edge)
+        if not worth:
+            log.info(f"  → HOLD: {why} (keeping capacity in reserve)")
+            return False
+
         price = yes_price if signal.direction == "YES" else no_price
         size  = self.risk.compute_position_size(blended_conf, signal.edge, price, balance)
 
@@ -186,6 +220,7 @@ class Trader:
             f"    conf={blended_conf:.2%}  edge={signal.edge:.3f}  size=${size:.2f}"
         )
         self._execute_trade(market, signal, blended_conf, size, yes_price, no_price, candles)
+        self._last_entry_ts = time.time()
         return True
 
     # ── Trade execution ──────────────────────────────────────────────────────

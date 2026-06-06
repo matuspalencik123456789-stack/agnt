@@ -23,6 +23,15 @@ MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.01"))   # 1%
 # Minimum directional conviction (|P(up)-0.5|) for the outcome model to act.
 STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.06"))
 STAT_MIN_MISPRICING      = float(os.getenv("STAT_MIN_MISPRICING", "0.03"))
+
+# ── Trade selectivity ("should I bother trading right now?") ──────────────────
+# Minimum quality score (confidence × edge) for the FIRST entry on a slug.
+ENTRY_QUALITY_MIN        = float(os.getenv("ENTRY_QUALITY_MIN", "0.012"))
+# Each additional entry on the same slug must clear a progressively higher bar —
+# the agent keeps capacity in reserve and only spends it on a clearly better setup.
+ENTRY_QUALITY_ESCALATION = float(os.getenv("ENTRY_QUALITY_ESCALATION", "1.6"))
+# Minimum seconds between two entries on the same slug (don't dump all at once).
+ENTRY_COOLDOWN_SECONDS   = int(os.getenv("ENTRY_COOLDOWN_SECONDS", "120"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 
