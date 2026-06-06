@@ -3,6 +3,7 @@ Self-learning module.
 Uses completed trade history to update strategy weights via a bandit-style
 Bayesian update + gradient-boosted meta-model for feature-based edge prediction.
 """
+from __future__ import annotations   # Python 3.9 compatibility for `X | None` hints
 import logging
 import pickle
 import os
