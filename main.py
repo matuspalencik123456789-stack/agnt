@@ -100,15 +100,25 @@ def run_agent():
         log.info("Agent stopped.")
 
 
-def run_dashboard():
+def _streamlit_cmd():
     # Use `python3 -m streamlit` so it works even when the `streamlit` console
     # script isn't on PATH (common with --user pip installs on macOS).
-    import sys
-    os.execv(sys.executable, [
+    return [
         sys.executable, "-m", "streamlit", "run", "dashboard/app.py",
         "--server.port", os.getenv("DASHBOARD_PORT", "8501"),
         "--server.headless", "true",
-    ])
+    ]
+
+
+def run_dashboard():
+    """Dashboard only — replace this process with streamlit."""
+    os.execv(sys.executable, _streamlit_cmd())
+
+
+def launch_dashboard_subprocess():
+    """Start streamlit as a child process so the agent can keep running."""
+    import subprocess
+    return subprocess.Popen(_streamlit_cmd())
 
 
 def main():
@@ -120,10 +130,13 @@ def main():
     if args.dashboard:
         run_dashboard()
     elif args.both:
-        t = threading.Thread(target=run_agent, daemon=True)
-        t.start()
-        time.sleep(2)
-        run_dashboard()   # blocks
+        # Dashboard runs as a CHILD process; the agent stays in the foreground
+        # (BlockingScheduler) so it keeps trading and rolling slugs forever.
+        proc = launch_dashboard_subprocess()
+        try:
+            run_agent()   # blocks — agent lives for the whole session
+        finally:
+            proc.terminate()
     else:
         run_agent()
 
