@@ -52,6 +52,13 @@ STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.25"))
 # Also exit if the model now favours the OPPOSITE side with at least this prob.
 EXIT_ON_REVERSAL         = os.getenv("EXIT_ON_REVERSAL", "true").lower() == "true"
 MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.62"))
+# Don't sell on a single price touch — the exit condition must hold for this
+# many consecutive roll-checks before we actually close (filters out noise).
+EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "2"))
+# For a stop-loss, also require the MODEL to agree the position is now likely
+# losing (its prob for our side below this) — don't panic-sell a temporary dip
+# if the model still backs our side.
+STOP_LOSS_MODEL_MAXPROB  = float(os.getenv("STOP_LOSS_MODEL_MAXPROB", "0.45"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 

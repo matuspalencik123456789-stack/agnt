@@ -52,6 +52,8 @@ class Trader:
         self._current_slug: str = None
         self._slug_trades: int  = 0
         self._last_entry_ts: float = 0.0   # for the per-slug entry cooldown
+        # pending early-exit confirmations: {trade_id: {"reason": str, "count": int}}
+        self._exit_pending: Dict[int, dict] = {}
         # start live WebSocket feeds (Binance price + Polymarket books)
         self.feeds.start(on_kline_close=self._on_kline_close)
 
@@ -317,25 +319,57 @@ class Trader:
 
             # Re-evaluate the model once for this slug (to detect a reversal).
             signal = self.ensemble.generate_signal(candles, yes_mid, no_mid, market)
+            # the model's probability that the held side wins (for verification)
+            model_p_side = self._model_prob_for_side(candles, yes_mid, no_mid, market)
+
+            live_ids = {t.id for t in open_trades}
+            # drop stale pending entries for trades that already closed/rolled off
+            self._exit_pending = {k: v for k, v in self._exit_pending.items() if k in live_ids}
 
             for trade in open_trades:
                 side    = trade.side
                 mid     = yes_mid if side == "YES" else no_mid
                 token   = _token_for_side(market, side)
                 sell_px = self.poly.get_sell_price(token, mid)
+                p_side  = model_p_side if side == "YES" else (
+                          (1.0 - model_p_side) if model_p_side is not None else None)
 
+                # ── candidate exit reason (not yet confirmed) ──────────────
                 reason = None
                 if sell_px >= config.TAKE_PROFIT_PRICE:
                     reason = f"take-profit (bid {sell_px:.3f} ≥ {config.TAKE_PROFIT_PRICE})"
                 elif sell_px <= config.STOP_LOSS_PRICE:
+                    # only cut the loss if the MODEL also no longer backs our side
+                    if p_side is not None and p_side > config.STOP_LOSS_MODEL_MAXPROB:
+                        self._exit_pending.pop(trade.id, None)
+                        log.info(f"  [hold {trade.id}] bid {sell_px:.3f} low but model "
+                                 f"still backs {side} (p={p_side:.2f}) — not selling")
+                        continue
                     reason = f"stop-loss (bid {sell_px:.3f} ≤ {config.STOP_LOSS_PRICE})"
                 elif (config.EXIT_ON_REVERSAL and signal.direction not in ("PASS", side)
                       and signal.confidence >= config.MODEL_REVERSAL_PROB):
                     reason = (f"model reversal → {signal.direction} "
                               f"conf={signal.confidence:.2f}")
 
-                if reason:
-                    self._close_position_early(session, trade, sell_px, reason)
+                # ── confirmation: condition must persist across checks ─────
+                if not reason:
+                    self._exit_pending.pop(trade.id, None)
+                    continue
+
+                pend = self._exit_pending.get(trade.id)
+                if pend and pend["reason"].split(" ")[0] == reason.split(" ")[0]:
+                    pend["count"] += 1
+                else:
+                    pend = {"reason": reason, "count": 1}
+                self._exit_pending[trade.id] = pend
+
+                if pend["count"] < config.EXIT_CONFIRM_COUNT:
+                    log.info(f"  [exit-watch {trade.id}] {reason} "
+                             f"({pend['count']}/{config.EXIT_CONFIRM_COUNT} confirmations)")
+                    continue
+
+                self._exit_pending.pop(trade.id, None)
+                self._close_position_early(session, trade, sell_px, reason)
 
             session.commit()
         except Exception as e:
@@ -343,6 +377,17 @@ class Trader:
             log.error(f"manage_open_positions error: {e}")
         finally:
             session.close()
+
+    def _model_prob_for_side(self, candles, yes_mid, no_mid, market) -> Optional[float]:
+        """The statistical model's probability that YES wins (fair_yes), or None."""
+        try:
+            strat = self.ensemble.strategies.get("stat_outcome")
+            if not strat:
+                return None
+            sig = strat.generate_signal(candles, yes_mid, no_mid, market)
+            return sig.details.get("fair_yes")
+        except Exception:
+            return None
 
     def _close_position_early(self, session, trade, sell_price: float, reason: str):
         """Sell a position before the window resolves; record realised P&L."""
