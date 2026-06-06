@@ -120,6 +120,8 @@ class Trader:
         candles = fetch_candles()
         if candles.empty:
             return
+        # Manage existing positions first — maybe close one early.
+        self.manage_open_positions(market, candles)
         balance = self.poly.get_balance() or 1000.0
         self._trade_active_slug(candles, balance, prefetched=market)
 
@@ -283,6 +285,91 @@ class Trader:
             log.error(f"save trade error: {e}")
         finally:
             session.close()
+
+    # ── Early exit / position management ─────────────────────────────────────
+
+    def manage_open_positions(self, market: Dict, candles):
+        """
+        Look at still-open positions on the CURRENT slug and decide whether to
+        sell early — locking a profit, cutting a loss, or bailing when the model
+        flips against us. Runs every roll-check, so it reacts within seconds.
+        """
+        if not config.ENABLE_EARLY_EXIT or not market:
+            return
+
+        slug = market.get("slug") or market.get("conditionId")
+        # Don't bother in the last seconds — the window resolves on its own.
+        secs = self.tracker.seconds_to_end(market)
+        if secs is not None and secs < config.ROLL_CUTOFF_SECONDS:
+            return
+
+        session = get_session()
+        try:
+            open_trades = session.query(Trade).filter(
+                Trade.resolved == False,
+                Trade.market_slug == (market.get("slug") or ""),
+            ).all()
+            if not open_trades:
+                return
+
+            market = self.poly.enrich_market(market)
+            yes_mid, no_mid = self.poly.get_market_prices(market)
+
+            # Re-evaluate the model once for this slug (to detect a reversal).
+            signal = self.ensemble.generate_signal(candles, yes_mid, no_mid, market)
+
+            for trade in open_trades:
+                side    = trade.side
+                mid     = yes_mid if side == "YES" else no_mid
+                token   = _token_for_side(market, side)
+                sell_px = self.poly.get_sell_price(token, mid)
+
+                reason = None
+                if sell_px >= config.TAKE_PROFIT_PRICE:
+                    reason = f"take-profit (bid {sell_px:.3f} ≥ {config.TAKE_PROFIT_PRICE})"
+                elif sell_px <= config.STOP_LOSS_PRICE:
+                    reason = f"stop-loss (bid {sell_px:.3f} ≤ {config.STOP_LOSS_PRICE})"
+                elif (config.EXIT_ON_REVERSAL and signal.direction not in ("PASS", side)
+                      and signal.confidence >= config.MODEL_REVERSAL_PROB):
+                    reason = (f"model reversal → {signal.direction} "
+                              f"conf={signal.confidence:.2f}")
+
+                if reason:
+                    self._close_position_early(session, trade, sell_px, reason)
+
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            log.error(f"manage_open_positions error: {e}")
+        finally:
+            session.close()
+
+    def _close_position_early(self, session, trade, sell_price: float, reason: str):
+        """Sell a position before the window resolves; record realised P&L."""
+        fee = config.FEE_RATE * (trade.size_usd or 0)
+        pnl = round((sell_price - trade.price) * (trade.shares or 0) - fee, 4)
+        roi = round((pnl / trade.size_usd) * 100, 2) if trade.size_usd else 0
+        won = pnl > 0
+
+        trade.resolved   = True
+        # mark resolution so WIN/LOSS displays correctly for an early close
+        trade.resolution = trade.side if won else ("NO" if trade.side == "YES" else "YES")
+        trade.exit_price = sell_price
+        trade.pnl_usd    = pnl
+        trade.roi_pct    = roi
+        trade.closed_at  = datetime.utcnow()
+
+        emoji = "✅ WIN" if won else "❌ LOSS"
+        log.info(f"  🚪 EARLY EXIT trade {trade.id}: SOLD {trade.side} @ {sell_price:.3f} "
+                 f"({reason}) → {emoji} PnL=${pnl:+.4f} ROI={roi:+.1f}%")
+
+        try:
+            self.learner.record_trade_result(
+                trade.strategy_used or "ensemble", won, roi,
+                signal_data=trade.signal_data, resolution=trade.resolution,
+            )
+        except Exception as e:
+            log.debug(f"learner.record (early exit): {e}")
 
     # ── Resolution checker ───────────────────────────────────────────────────
 

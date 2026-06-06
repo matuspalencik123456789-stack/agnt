@@ -40,6 +40,18 @@ ENTRY_COOLDOWN_SECONDS   = int(os.getenv("ENTRY_COOLDOWN_SECONDS", "120"))
 # without it a coin-flip strategy looks profitable but bleeds to the spread.
 PAPER_SPREAD             = float(os.getenv("PAPER_SPREAD", "0.02"))   # 2¢ assumed bid/ask spread
 FEE_RATE                 = float(os.getenv("FEE_RATE", "0.0"))        # fraction of notional per trade
+
+# ── Early exit / position management ("sell mid-trade if something changes") ──
+# The agent can close a position BEFORE the window resolves to lock in a profit
+# or cut a loss when the market/model moves unexpectedly against it.
+ENABLE_EARLY_EXIT        = os.getenv("ENABLE_EARLY_EXIT", "true").lower() == "true"
+# Sell to take profit once the held token's bid reaches this price.
+TAKE_PROFIT_PRICE        = float(os.getenv("TAKE_PROFIT_PRICE", "0.90"))
+# Sell to cut the loss once the held token's bid falls to this price.
+STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.25"))
+# Also exit if the model now favours the OPPOSITE side with at least this prob.
+EXIT_ON_REVERSAL         = os.getenv("EXIT_ON_REVERSAL", "true").lower() == "true"
+MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.62"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 

@@ -136,6 +136,22 @@ class PolymarketClient:
         # fallback: mid + half the assumed spread
         return min(0.999, max(0.001, mid + config.PAPER_SPREAD / 2.0))
 
+    def get_sell_price(self, token_id: str, mid: float) -> float:
+        """
+        Realistic fill price for SELLING this token: cross the spread to the bid.
+        Uses the live order book's best bid when available; otherwise models an
+        assumed spread around the mid. Clamped to (0, 1).
+        """
+        try:
+            book = self.get_book(token_id) if token_id else None
+            if book:
+                bids = sorted(book.get("bids", []), key=lambda x: float(x["price"]), reverse=True)
+                if bids:
+                    return max(0.001, float(bids[0]["price"]))
+        except Exception:
+            pass
+        return min(0.999, max(0.001, mid - config.PAPER_SPREAD / 2.0))
+
     def get_market_prices(self, market: Dict) -> tuple:
         tokens = market.get("tokens", market.get("clobTokenIds", []))
         yes_token = no_token = None
