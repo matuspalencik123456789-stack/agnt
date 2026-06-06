@@ -324,18 +324,30 @@ class StatOutcomeStrategy(BaseStrategy):
         p_yes = p_up if direction != "below" else (1.0 - p_up)
         p_no  = 1.0 - p_yes
 
-        edge_yes = p_yes - yes_price
-        edge_no  = p_no  - no_price
-
-        if edge_yes <= 0 and edge_no <= 0:
-            return self._pass({"p_up": round(p_up, 3), "reason": "no mispricing"})
-
-        if edge_yes >= edge_no:
-            bet_side, confidence, edge = "YES", p_yes, edge_yes
+        # pick the side the model favours
+        if p_yes >= p_no:
+            bet_side, model_p, mkt_price = "YES", p_yes, yes_price
         else:
-            bet_side, confidence, edge = "NO", p_no, edge_no
+            bet_side, model_p, mkt_price = "NO",  p_no,  no_price
 
-        return Signal(self.name, bet_side, min(confidence, 1.0), max(edge, 0.0),
-                      {"p_up": round(p_up, 3), "fair_yes": round(p_yes, 3),
-                       "strike": round(strike, 1), "current": round(current, 1),
-                       "secs_left": round(secs_left), "vol_step": round(vol, 6)})
+        mispricing  = model_p - mkt_price          # >0 = market underprices our side
+        conviction  = model_p - 0.5                # how far from a coin-flip
+
+        details = {"p_up": round(p_up, 3), "fair_yes": round(p_yes, 3),
+                   "side": bet_side, "model_p": round(model_p, 3),
+                   "mkt_price": round(mkt_price, 3), "misprice": round(mispricing, 3),
+                   "conviction": round(conviction, 3),
+                   "strike": round(strike, 1), "current": round(current, 1),
+                   "secs_left": round(secs_left), "vol_step": round(vol, 6)}
+
+        # need a minimum directional conviction to act at all
+        min_conv = float(getattr(config, "STAT_MIN_CONVICTION", 0.04))
+        if conviction < min_conv:
+            details["reason"] = f"low conviction {conviction:.3f} < {min_conv}"
+            return self._pass(details)
+
+        # edge = mispricing if the market underprices us, else fall back to a
+        # small floor driven by conviction (so the model's directional call still
+        # gets evaluated even when the market is fairly priced)
+        edge = mispricing if mispricing > 0 else min(conviction, 0.05)
+        return Signal(self.name, bet_side, min(model_p, 1.0), max(edge, 0.0), details)

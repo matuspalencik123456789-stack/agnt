@@ -46,6 +46,12 @@ class EnsembleStrategy:
                     log.debug(f"    [{name}] {sig.direction} conf={sig.confidence:.3f} edge={sig.edge:.3f}")
                 else:
                     log.debug(f"    [{name}] PASS — {sig.details.get('reason','')}")
+                # always surface the principled outcome model at INFO
+                if name == "stat_outcome":
+                    d = sig.details
+                    log.info(f"  Model: P(up)={d.get('p_up','?')} → {d.get('side','-')} "
+                             f"(model_p={d.get('model_p','?')} mkt={d.get('mkt_price','?')} "
+                             f"conv={d.get('conviction','?')} {sig.direction})")
             except Exception as e:
                 log.warning(f"Strategy {name} failed: {e}")
 
