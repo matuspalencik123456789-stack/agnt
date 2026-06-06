@@ -32,12 +32,20 @@ ENTRY_QUALITY_MIN        = float(os.getenv("ENTRY_QUALITY_MIN", "0.012"))
 ENTRY_QUALITY_ESCALATION = float(os.getenv("ENTRY_QUALITY_ESCALATION", "1.6"))
 # Minimum seconds between two entries on the same slug (don't dump all at once).
 ENTRY_COOLDOWN_SECONDS   = int(os.getenv("ENTRY_COOLDOWN_SECONDS", "120"))
+
+# ── Transaction costs (realism) ───────────────────────────────────────────────
+# In paper mode we buy at the ASK, not the mid. When a live order book is
+# available we use its real ask; otherwise we model an assumed spread. We also
+# subtract a fee on the notional. This makes paper P&L match live reality —
+# without it a coin-flip strategy looks profitable but bleeds to the spread.
+PAPER_SPREAD             = float(os.getenv("PAPER_SPREAD", "0.02"))   # 2¢ assumed bid/ask spread
+FEE_RATE                 = float(os.getenv("FEE_RATE", "0.0"))        # fraction of notional per trade
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 
 # ── Self-learning ────────────────────────────────────────────────────────────
-LEARNING_RATE         = float(os.getenv("LEARNING_RATE", "0.05"))
-MIN_TRADES_TO_LEARN   = int(os.getenv("MIN_TRADES_TO_LEARN", "20"))
+LEARNING_RATE         = float(os.getenv("LEARNING_RATE", "0.08"))
+MIN_TRADES_TO_LEARN   = int(os.getenv("MIN_TRADES_TO_LEARN", "8"))
 STRATEGY_DECAY        = float(os.getenv("STRATEGY_DECAY", "0.99"))  # older trades matter less
 
 # ── Data ─────────────────────────────────────────────────────────────────────

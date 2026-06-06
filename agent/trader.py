@@ -18,6 +18,15 @@ import config
 log = logging.getLogger(__name__)
 
 
+def _token_for_side(market: Dict, side: str) -> str:
+    """Return the YES/NO token id for the given side."""
+    tokens = market.get("tokens", market.get("clobTokenIds", []))
+    for t in (tokens if isinstance(tokens, list) else []):
+        if isinstance(t, dict) and t.get("outcome", "").upper() == side:
+            return t.get("token_id", t.get("tokenId", "")) or ""
+    return ""
+
+
 def _market_token_ids(market: Dict) -> List[str]:
     """Extract YES/NO token ids from a market dict."""
     tokens = market.get("tokens", market.get("clobTokenIds", []))
@@ -80,7 +89,7 @@ class Trader:
         self._trade_active_slug(candles, balance)
 
         # 4. Periodically retrain the meta-model
-        if self.cycle % 10 == 0:
+        if self.cycle % 5 == 0:
             log.info("Retraining meta-model...")
             self.learner.train_meta_model()
             self.learner.update_weights_from_history()
@@ -198,17 +207,25 @@ class Trader:
         )
         blended_conf = 0.7 * signal.confidence + 0.3 * ml_prob
 
+        # Realistic entry: we BUY at the ask, not the mid. Recompute edge against
+        # the price we'd actually pay — a model that only beats the mid but not
+        # the spread is not a real edge.
+        mid_price = yes_price if signal.direction == "YES" else no_price
+        token_id  = _token_for_side(market, signal.direction)
+        price     = self.poly.get_buy_price(token_id, mid_price)
+        eff_edge  = max(0.0, blended_conf - price)
+
         # ── "Is it worth trading right now?" — selectivity gate ───────────────
         # The agent doesn't blow all its slots on the first qualifying signals.
-        # It scores the setup and only spends a slot on a genuinely good one,
-        # escalating the bar for each extra entry and respecting a cooldown.
-        worth, why = self._is_worth_trading(blended_conf, signal.edge)
+        # It scores the setup (after costs) and only spends a slot on a genuinely
+        # good one, escalating the bar per entry and respecting a cooldown.
+        worth, why = self._is_worth_trading(blended_conf, eff_edge)
         if not worth:
-            log.info(f"  → HOLD: {why} (keeping capacity in reserve)")
+            log.info(f"  → HOLD: {why} (mid={mid_price:.3f} ask={price:.3f}, "
+                     f"keeping capacity in reserve)")
             return False
 
-        price = yes_price if signal.direction == "YES" else no_price
-        size  = self.risk.compute_position_size(blended_conf, signal.edge, price, balance)
+        size  = self.risk.compute_position_size(blended_conf, eff_edge, price, balance)
 
         can_trade, reason = self.risk.can_trade(size, balance)
         if not can_trade:
@@ -217,25 +234,20 @@ class Trader:
 
         log.info(
             f"  TRADE → {signal.direction} | {market.get('question','')[:60]}\n"
-            f"    conf={blended_conf:.2%}  edge={signal.edge:.3f}  size=${size:.2f}"
+            f"    conf={blended_conf:.2%}  edge={eff_edge:.3f}  "
+            f"fill={price:.3f} (mid {mid_price:.3f})  size=${size:.2f}"
         )
-        self._execute_trade(market, signal, blended_conf, size, yes_price, no_price, candles)
+        self._execute_trade(market, signal, blended_conf, size, price, candles, token_id)
         self._last_entry_ts = time.time()
         return True
 
     # ── Trade execution ──────────────────────────────────────────────────────
 
     def _execute_trade(self, market: Dict, signal, confidence: float,
-                       size_usd: float, yes_price: float, no_price: float,
-                       candles=None):
-        tokens = market.get("tokens", market.get("clobTokenIds", []))
-        token_id = None
-        for t in (tokens if isinstance(tokens, list) else []):
-            if isinstance(t, dict):
-                if t.get("outcome", "").upper() == signal.direction:
-                    token_id = t.get("token_id", t.get("tokenId", ""))
-
-        price = yes_price if signal.direction == "YES" else no_price
+                       size_usd: float, price: float,
+                       candles=None, token_id: str = None):
+        if token_id is None:
+            token_id = _token_for_side(market, signal.direction)
         order_id = self.poly.place_market_order(token_id or "", signal.direction, size_usd, price)
 
         # window metadata for local paper-mode resolution
@@ -320,8 +332,9 @@ class Trader:
                     if (now_utc - w_end_aware).total_seconds() >= grace:
                         btc_now = get_current_btc_price()
                         if btc_now and trade.btc_open:
-                            # YES = price ended ABOVE window open
-                            resolution = "YES" if btc_now >= trade.btc_open else "NO"
+                            # YES = price ended strictly ABOVE window open.
+                            # A flat tie counts as NO ("did not go up").
+                            resolution = "YES" if btc_now > trade.btc_open else "NO"
                             log.info(
                                 f"  [paper resolve] trade {trade.id}: "
                                 f"BTC {trade.btc_open:.0f} → {btc_now:.0f}  → {resolution}"
@@ -333,8 +346,9 @@ class Trader:
                 won = (resolution == trade.side)
                 # In a binary market: winner gets $1/share, loser gets $0
                 exit_p = 1.0 if won else 0.0
-                pnl    = round((exit_p - trade.price) * trade.shares, 4)
-                roi    = round((exit_p / trade.price - 1) * 100, 2) if trade.price else 0
+                fee    = config.FEE_RATE * (trade.size_usd or 0)
+                pnl    = round((exit_p - trade.price) * trade.shares - fee, 4)
+                roi    = round((pnl / trade.size_usd) * 100, 2) if trade.size_usd else 0
 
                 trade.resolved   = True
                 trade.resolution = resolution
