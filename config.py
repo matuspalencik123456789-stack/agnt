@@ -33,10 +33,19 @@ MODEL_PATH   = os.getenv("MODEL_PATH", "data/model.pkl")
 # ── Market data ──────────────────────────────────────────────────────────────
 BTC_SYMBOL  = "BTC/USDT"
 BINANCE_API = "https://api.binance.com"
+# Candle timeframe for indicators. Smaller = finer price detail + faster signals.
+# Binance native intervals: 1s, 1m, 3m, 5m, ...  We fetch CANDLE_INTERVAL and,
+# if CANDLE_RESAMPLE_SEC is set, aggregate into custom-second buckets (e.g. 20s)
+# since Binance has no native 20-second candle.
+CANDLE_INTERVAL     = os.getenv("CANDLE_INTERVAL", "1s")
+CANDLE_LIMIT        = int(os.getenv("CANDLE_LIMIT", "1000"))   # max 1000 for 1s
+CANDLE_RESAMPLE_SEC = int(os.getenv("CANDLE_RESAMPLE_SEC", "20"))  # 0 = no resample
 
 # ── WebSocket live feeds ─────────────────────────────────────────────────────
 ENABLE_WEBSOCKET   = os.getenv("ENABLE_WEBSOCKET", "true").lower() == "true"
 BINANCE_WS         = os.getenv("BINANCE_WS", "wss://stream.binance.com:9443/ws")
+# Kline interval for the live candle-close trigger (fires re-evaluation).
+WS_KLINE_INTERVAL  = os.getenv("WS_KLINE_INTERVAL", "1m")
 POLYMARKET_WS      = os.getenv("POLYMARKET_WS", "wss://ws-subscriptions-clob.polymarket.com/ws/market")
 WS_RECONNECT_MAX   = int(os.getenv("WS_RECONNECT_MAX", "8"))      # max backoff exponent cap (seconds = 2^n)
 WS_STALE_SECONDS   = int(os.getenv("WS_STALE_SECONDS", "30"))     # treat feed as stale after this
@@ -57,6 +66,6 @@ ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "3600"))   
 # Also accept any BTC market that ends within this many seconds from now.
 ROLLING_NEAR_END_SEC = int(os.getenv("ROLLING_NEAR_END_SEC", "14400"))  # 4 hours
 # How often (seconds) to check whether the active slug has ended and roll to the next.
-ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "60"))
+ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "20"))
 # Seconds before end to stop opening new positions on the current slug.
 ROLL_CUTOFF_SECONDS = int(os.getenv("ROLL_CUTOFF_SECONDS", "60"))

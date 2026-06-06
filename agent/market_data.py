@@ -12,8 +12,10 @@ log = logging.getLogger(__name__)
 BINANCE_KLINES = f"{config.BINANCE_API}/api/v3/klines"
 
 
-def fetch_candles(symbol: str = "BTCUSDT", interval: str = "15m",
-                  limit: int = 200) -> pd.DataFrame:
+def fetch_candles(symbol: str = "BTCUSDT", interval: str = None,
+                  limit: int = None) -> pd.DataFrame:
+    interval = interval or config.CANDLE_INTERVAL
+    limit    = limit or config.CANDLE_LIMIT
     """Return DataFrame with columns: timestamp, open, high, low, close, volume."""
     try:
         resp = requests.get(
@@ -32,10 +34,23 @@ def fetch_candles(symbol: str = "BTCUSDT", interval: str = "15m",
             df[col] = pd.to_numeric(df[col])
         df = df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
         df.set_index("timestamp", inplace=True)
-        return df
+        return _resample(df)
     except Exception as e:
         log.error(f"Binance fetch error: {e}")
         return _load_from_db()
+
+
+def _resample(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate fine candles into custom-second buckets (e.g. 20s)."""
+    secs = getattr(config, "CANDLE_RESAMPLE_SEC", 0)
+    if not secs or df.empty:
+        return df
+    rule = f"{secs}s"
+    agg = df.resample(rule).agg({
+        "open": "first", "high": "max", "low": "min",
+        "close": "last", "volume": "sum",
+    }).dropna()
+    return agg
 
 
 def _load_from_db() -> pd.DataFrame:

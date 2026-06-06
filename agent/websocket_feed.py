@@ -131,14 +131,15 @@ class _ReconnectingWS(threading.Thread):
 
 class BinanceFeed(_ReconnectingWS):
     def __init__(self, symbol: str = "btcusdt"):
-        # combined stream: trade ticker + 15m kline
-        url = f"{config.BINANCE_WS}/{symbol}@trade/{symbol}@kline_15m"
+        # combined stream: trade ticker + kline (interval matches CANDLE_INTERVAL)
+        kline_iv = getattr(config, "WS_KLINE_INTERVAL", "1m")
+        url = f"{config.BINANCE_WS}/{symbol}@trade/{symbol}@kline_{kline_iv}"
         super().__init__(url, name="binance-ws")
         self.symbol = symbol
         self.on_kline_close: Optional[Callable[[dict], None]] = None
 
     def on_open(self, ws):
-        log.info("[binance-ws] connected — streaming BTC price + 15m klines.")
+        log.info("[binance-ws] connected — streaming BTC price + klines.")
 
     def on_message(self, ws, message):
         try:
