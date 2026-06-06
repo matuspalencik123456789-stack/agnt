@@ -124,6 +124,6 @@ ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "3600"))   
 # Also accept any BTC market that ends within this many seconds from now.
 ROLLING_NEAR_END_SEC = int(os.getenv("ROLLING_NEAR_END_SEC", "14400"))  # 4 hours
 # How often (seconds) to check whether the active slug has ended and roll to the next.
-ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "2"))
+ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "5"))
 # Seconds before end to stop opening new positions on the current slug.
 ROLL_CUTOFF_SECONDS = int(os.getenv("ROLL_CUTOFF_SECONDS", "60"))
