@@ -42,6 +42,10 @@ class EnsembleStrategy:
             try:
                 sig = strategy.generate_signal(candles, yes_price, no_price, market_meta)
                 signals.append(sig)
+                if sig.direction != "PASS":
+                    log.debug(f"    [{name}] {sig.direction} conf={sig.confidence:.3f} edge={sig.edge:.3f}")
+                else:
+                    log.debug(f"    [{name}] PASS — {sig.details.get('reason','')}")
             except Exception as e:
                 log.warning(f"Strategy {name} failed: {e}")
 
@@ -73,15 +77,18 @@ class EnsembleStrategy:
             raw_conf  = no_score / (yes_score + no_score)
             price     = no_price
 
-        # require majority agreement (≥ 0.55)
-        if raw_conf < 0.55:
+        log.info(f"  Ensemble: YES={yes_score:.4f} NO={no_score:.4f} "
+                 f"→ {direction} conf={raw_conf:.3f} price={price:.3f}")
+
+        # require simple majority (≥ 0.51)
+        if raw_conf < 0.51:
             return Signal("ensemble", "PASS", raw_conf, 0.0,
-                          {"reason": "insufficient consensus", "yes": yes_score, "no": no_score})
+                          {"reason": f"weak consensus {raw_conf:.2f}", "yes": yes_score, "no": no_score})
 
         edge = max(0, raw_conf - price)
         if edge < config.MIN_EDGE_THRESHOLD:
             return Signal("ensemble", "PASS", raw_conf, edge,
-                          {"reason": f"edge {edge:.3f} below threshold"})
+                          {"reason": f"edge {edge:.3f} < {config.MIN_EDGE_THRESHOLD:.3f}"})
 
         sub_details = {s.strategy: {"dir": s.direction, "conf": round(s.confidence, 3),
                                     "edge": round(s.edge, 3)}

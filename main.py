@@ -39,7 +39,11 @@ def setup_logging():
         "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     ))
     root = logging.getLogger()
-    root.setLevel(logging.INFO)
+    level = logging.DEBUG if os.getenv("DEBUG_AGENT") else logging.INFO
+    root.setLevel(level)
+    # suppress noisy 3rd-party debug spam even in debug mode
+    for noisy in ("urllib3", "websocket", "apscheduler", "sqlalchemy"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     root.addHandler(handler)
     root.addHandler(file_handler)
 
