@@ -74,7 +74,7 @@ class MarketTracker:
     # ── Discovery ────────────────────────────────────────────────────────────
 
     def _is_rolling_btc(self, market: Dict) -> bool:
-        """True if this looks like a recurring 15-min BTC market."""
+        """True if this looks like a short-duration BTC market worth trading."""
         q = (market.get("question", "") or "").lower()
         slug = (market.get("slug", "") or "").lower()
         text = f"{q} {slug}"
@@ -83,22 +83,30 @@ class MarketTracker:
         if not is_btc:
             return False
 
-        # phrase match OR short duration
+        # phrase match
         phrase_hit = any(p in text for p in config.ROLLING_MARKET_PHRASES)
+        if phrase_hit:
+            return True
 
+        # short duration (start → end within cap)
         start = _parse_dt(market.get("startDate") or market.get("start_date"))
         end   = _parse_dt(market.get("endDate")   or market.get("end_date"))
-        short_duration = False
         if start and end:
             dur = (end - start).total_seconds()
-            short_duration = 0 < dur <= config.ROLLING_MAX_DURATION_SEC
+            if 0 < dur <= config.ROLLING_MAX_DURATION_SEC:
+                return True
 
-        return phrase_hit or short_duration
+        # fallback: any BTC market ending within ROLLING_NEAR_END_SEC seconds
+        now = datetime.now(timezone.utc)
+        if end and 0 < (end - now).total_seconds() <= config.ROLLING_NEAR_END_SEC:
+            return True
 
-    def fetch_rolling_markets(self, limit: int = 100) -> List[Dict]:
-        """Return active rolling 15-min BTC markets, soonest-ending first."""
+        return False
+
+    def fetch_rolling_markets(self, limit: int = 200) -> List[Dict]:
+        """Return active BTC markets, soonest-ending first."""
         candidates: List[Dict] = []
-        for kw in ("bitcoin", "btc"):
+        for kw in ("bitcoin", "btc", "BTC up", "bitcoin price"):
             try:
                 resp = requests.get(
                     f"{self._gamma}/markets",
@@ -116,6 +124,7 @@ class MarketTracker:
                 data = resp.json()
                 if isinstance(data, dict):
                     data = data.get("markets", [])
+                log.debug(f"Gamma API '{kw}': {len(data)} markets returned")
                 for m in data:
                     if self._is_rolling_btc(m):
                         candidates.append(m)
@@ -150,7 +159,8 @@ class MarketTracker:
         """
         live = self.fetch_rolling_markets()
         if not live:
-            log.info("No rolling 15-min BTC market currently available.")
+            log.warning("No BTC market found — running raw Gamma probe...")
+            self._debug_probe()
             return None
 
         now = datetime.now(timezone.utc)
@@ -176,6 +186,21 @@ class MarketTracker:
             self.active_market = chosen
             self._persist_roll(self.roll_number, new_slug, chosen)
         return chosen
+
+    def _debug_probe(self):
+        """Log the first few active Gamma markets so we can see what's available."""
+        try:
+            r = requests.get(f"{self._gamma}/markets",
+                             params={"q": "bitcoin", "active": "true", "closed": "false", "limit": "5"},
+                             timeout=10)
+            data = r.json()
+            if isinstance(data, dict):
+                data = data.get("markets", [])
+            for m in data[:5]:
+                log.warning(f"  probe: slug={m.get('slug')} q={m.get('question','')[:60]} "
+                            f"start={m.get('startDate')} end={m.get('endDate')}")
+        except Exception as e:
+            log.warning(f"probe error: {e}")
 
     def seconds_to_end(self, market: Dict) -> Optional[float]:
         end = _parse_dt(market.get("endDate") or market.get("end_date"))

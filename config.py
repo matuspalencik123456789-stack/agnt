@@ -46,10 +46,16 @@ BTC_MARKET_KEYWORDS = ["bitcoin", "btc", "BTC"]
 
 # ── 15-min slug rolling ──────────────────────────────────────────────────────
 # Phrases that identify the recurring short-duration BTC markets.
-ROLLING_MARKET_PHRASES = ["up or down", "higher or lower", "15 min", "15-min", "15m"]
+ROLLING_MARKET_PHRASES = [
+    "up or down", "higher or lower", "15 min", "15-min", "15m",
+    "up/down", "price up", "price down", "will btc", "will bitcoin",
+    "above", "below", "end of", "by end",
+]
 # A market counts as a "15-min" market if (endDate - startDate) is within this
 # window (seconds). Covers 15-min markets with a little slack.
-ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "1500"))   # 25 min slack
+ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "3600"))   # 1-hour slack
+# Also accept any BTC market that ends within this many seconds from now.
+ROLLING_NEAR_END_SEC = int(os.getenv("ROLLING_NEAR_END_SEC", "14400"))  # 4 hours
 # How often (seconds) to check whether the active slug has ended and roll to the next.
 ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "60"))
 # Seconds before end to stop opening new positions on the current slug.
