@@ -67,7 +67,7 @@ EXIT_ON_REVERSAL         = os.getenv("EXIT_ON_REVERSAL", "true").lower() == "tru
 MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.62"))
 # Don't sell on a single price touch — the exit condition must hold for this
 # many consecutive roll-checks before we actually close (filters out noise).
-EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "2"))
+EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "3"))
 # For a stop-loss, also require the MODEL to agree the position is now likely
 # losing (its prob for our side below this) — don't panic-sell a temporary dip
 # if the model still backs our side.
@@ -95,6 +95,9 @@ BINANCE_API = "https://api.binance.com"
 CANDLE_INTERVAL     = os.getenv("CANDLE_INTERVAL", "1s")
 CANDLE_LIMIT        = int(os.getenv("CANDLE_LIMIT", "1000"))   # max 1000 for 1s
 CANDLE_RESAMPLE_SEC = int(os.getenv("CANDLE_RESAMPLE_SEC", "20"))  # 0 = no resample
+# Candle cache TTL (s): protects Binance REST from a fast polling loop. Live
+# price stays sub-second via WebSocket, so this only throttles candle refetch.
+CANDLE_CACHE_SEC    = int(os.getenv("CANDLE_CACHE_SEC", "5"))
 
 # ── WebSocket live feeds ─────────────────────────────────────────────────────
 ENABLE_WEBSOCKET   = os.getenv("ENABLE_WEBSOCKET", "true").lower() == "true"
@@ -121,6 +124,6 @@ ROLLING_MAX_DURATION_SEC = int(os.getenv("ROLLING_MAX_DURATION_SEC", "3600"))   
 # Also accept any BTC market that ends within this many seconds from now.
 ROLLING_NEAR_END_SEC = int(os.getenv("ROLLING_NEAR_END_SEC", "14400"))  # 4 hours
 # How often (seconds) to check whether the active slug has ended and roll to the next.
-ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "20"))
+ROLL_CHECK_SECONDS = int(os.getenv("ROLL_CHECK_SECONDS", "2"))
 # Seconds before end to stop opening new positions on the current slug.
 ROLL_CUTOFF_SECONDS = int(os.getenv("ROLL_CUTOFF_SECONDS", "60"))

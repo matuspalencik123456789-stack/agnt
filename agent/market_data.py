@@ -11,12 +11,22 @@ log = logging.getLogger(__name__)
 
 BINANCE_KLINES = f"{config.BINANCE_API}/api/v3/klines"
 
+# Short-lived candle cache so a fast (2s) polling loop doesn't hammer Binance
+# REST and risk an IP ban. Live price stays sub-second via the WebSocket feed;
+# candle-based indicators don't need to refresh more often than this.
+_CANDLE_CACHE: dict = {"df": None, "ts": 0.0, "key": None}
+_CANDLE_CACHE_SEC = int(getattr(config, "CANDLE_CACHE_SEC", 5))
+
 
 def fetch_candles(symbol: str = "BTCUSDT", interval: str = None,
                   limit: int = None) -> pd.DataFrame:
     interval = interval or config.CANDLE_INTERVAL
     limit    = limit or config.CANDLE_LIMIT
     """Return DataFrame with columns: timestamp, open, high, low, close, volume."""
+    key = (symbol, interval, limit)
+    if (_CANDLE_CACHE["df"] is not None and _CANDLE_CACHE["key"] == key
+            and (time.time() - _CANDLE_CACHE["ts"]) < _CANDLE_CACHE_SEC):
+        return _CANDLE_CACHE["df"]
     try:
         resp = requests.get(
             BINANCE_KLINES,
@@ -34,7 +44,9 @@ def fetch_candles(symbol: str = "BTCUSDT", interval: str = None,
             df[col] = pd.to_numeric(df[col])
         df = df[["timestamp", "open", "high", "low", "close", "volume"]].copy()
         df.set_index("timestamp", inplace=True)
-        return _resample(df)
+        out = _resample(df)
+        _CANDLE_CACHE.update({"df": out, "ts": time.time(), "key": key})
+        return out
     except Exception as e:
         log.error(f"Binance fetch error: {e}")
         return _load_from_db()
