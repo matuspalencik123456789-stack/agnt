@@ -138,6 +138,15 @@ trades_df = load_trades()
 candles   = load_candles()
 btc_price = get_current_btc_price()
 
+# Warn if leftover DEMO data is present (real runs use real slug ids)
+if not trades_df.empty and trades_df["question"].astype(str).str.contains("demo", case=False).any():
+    st.warning("⚠️ Demo data detected. Run `python scripts/reset_db.py` to wipe it "
+               "and start a clean LIVE paper run.")
+elif trades_df.empty:
+    st.info("🟢 Clean slate — LIVE paper mode. Start the agent with "
+            "`python main.py --both`. Real trades will appear here as the agent "
+            "trades live Polymarket 15-min BTC slugs.")
+
 # ── KPI row ───────────────────────────────────────────────────────────────────
 c1, c2, c3, c4, c5, c6 = st.columns(6)
 

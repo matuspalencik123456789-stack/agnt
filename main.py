@@ -48,6 +48,14 @@ def run_agent():
     setup_logging()
     log = logging.getLogger("main")
 
+    is_paper = not config.POLYMARKET_PRIVATE_KEY
+    log.info("=" * 64)
+    log.info(f"  MODE: {'PAPER (simulated, no real money)' if is_paper else 'LIVE TRADING'}")
+    log.info(f"  Trading only REAL Polymarket 15-min BTC slugs (live discovery)")
+    log.info(f"  Cycle: every {config.TRADING_INTERVAL_MINUTES} min | "
+             f"Roll-check: every {config.ROLL_CHECK_SECONDS}s")
+    log.info("=" * 64)
+
     log.info("Initializing database...")
     init_db()
 
