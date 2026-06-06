@@ -1,9 +1,28 @@
 """Technical-analysis-based strategies using pure numpy/pandas indicators."""
+from datetime import datetime, timezone
+
 import numpy as np
 import pandas as pd
 
 from agent.strategies.base import BaseStrategy, Signal
 from agent.strategies.indicators import rsi, macd, bollinger, adx, vwap
+from agent.strategies.outcome_model import (
+    realized_vol_per_step, drift_per_step, window_open_price, prob_up,
+)
+import config
+
+
+def _parse_dt(value):
+    if not value:
+        return None
+    try:
+        s = str(value).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
 
 
 def _implied_btc_direction(market_meta: dict) -> tuple[str, float]:
@@ -267,3 +286,56 @@ class ADXStrategy(BaseStrategy):
         edge = max(0.0, confidence - price)
         return Signal(self.name, bet_side, confidence, edge,
                       {"adx": round(a, 2), "+di": round(dip.iloc[-1], 2), "-di": round(din.iloc[-1], 2)})
+
+
+class StatOutcomeStrategy(BaseStrategy):
+    """
+    Professional outcome estimator. Looks back at realized volatility + drift and
+    computes the *fair* probability the market resolves UP using a digital-option
+    random-walk model, then bets the side where the market price misprices it.
+    """
+    name = "stat_outcome"
+
+    def generate_signal(self, candles, yes_price, no_price, market_meta):
+        if len(candles) < 20:
+            return self._pass({"reason": "not enough candles"})
+
+        current = float(candles["close"].iloc[-1])
+        step_seconds = float(getattr(config, "CANDLE_RESAMPLE_SEC", 0) or 60)
+
+        # strike: explicit "$X" strike, else the window-open price for up/down
+        direction, strike = _implied_btc_direction(market_meta)
+        start = _parse_dt(market_meta.get("startDate") or market_meta.get("start_date"))
+        if not strike or strike <= 0:
+            strike = window_open_price(candles, start)
+        if not strike or strike <= 0:
+            return self._pass({"reason": "no strike/open"})
+
+        end = _parse_dt(market_meta.get("endDate") or market_meta.get("end_date"))
+        secs_left = (end - datetime.now(timezone.utc)).total_seconds() if end else 300.0
+
+        vol   = realized_vol_per_step(candles["close"])
+        drift = drift_per_step(candles["close"])
+        p_up  = prob_up(current, strike, secs_left, step_seconds, vol, drift)
+        if p_up is None:
+            return self._pass({"reason": "model n/a"})
+
+        # "below" markets: YES means price ends BELOW strike
+        p_yes = p_up if direction != "below" else (1.0 - p_up)
+        p_no  = 1.0 - p_yes
+
+        edge_yes = p_yes - yes_price
+        edge_no  = p_no  - no_price
+
+        if edge_yes <= 0 and edge_no <= 0:
+            return self._pass({"p_up": round(p_up, 3), "reason": "no mispricing"})
+
+        if edge_yes >= edge_no:
+            bet_side, confidence, edge = "YES", p_yes, edge_yes
+        else:
+            bet_side, confidence, edge = "NO", p_no, edge_no
+
+        return Signal(self.name, bet_side, min(confidence, 1.0), max(edge, 0.0),
+                      {"p_up": round(p_up, 3), "fair_yes": round(p_yes, 3),
+                       "strike": round(strike, 1), "current": round(current, 1),
+                       "secs_left": round(secs_left), "vol_step": round(vol, 6)})

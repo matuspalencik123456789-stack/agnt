@@ -6,7 +6,7 @@ import pandas as pd
 from agent.strategies.base import BaseStrategy, Signal
 from agent.strategies.technical import (
     RSIStrategy, MACDStrategy, BollingerStrategy,
-    MomentumStrategy, VWAPStrategy, ADXStrategy
+    MomentumStrategy, VWAPStrategy, ADXStrategy, StatOutcomeStrategy
 )
 import config
 
@@ -15,13 +15,21 @@ log = logging.getLogger(__name__)
 ALL_STRATEGIES: List[BaseStrategy] = [
     RSIStrategy(), MACDStrategy(), BollingerStrategy(),
     MomentumStrategy(), VWAPStrategy(), ADXStrategy(),
+    StatOutcomeStrategy(),
 ]
+
+# The statistical outcome model is the most principled signal — start it heavier.
+DEFAULT_WEIGHTS = {
+    "rsi": 1.0, "macd": 1.0, "bollinger": 1.0,
+    "momentum": 1.0, "vwap": 1.0, "adx": 1.0,
+    "stat_outcome": 2.5,
+}
 
 
 class EnsembleStrategy:
     def __init__(self, weights: Dict[str, float] = None):
         self.strategies = {s.name: s for s in ALL_STRATEGIES}
-        self.weights = weights or {s.name: 1.0 for s in ALL_STRATEGIES}
+        self.weights = weights or dict(DEFAULT_WEIGHTS)
 
     def update_weights(self, weights: Dict[str, float]):
         self.weights = weights
