@@ -38,8 +38,9 @@ class Trader:
         self.learner  = SelfLearner()
         self.risk     = RiskManager()
         self.cycle    = 0
-        # slug currently being traded, so we only act once per new slug
-        self._traded_slug: str = None
+        # track the active slug + how many trades we've opened on it (cap per slug)
+        self._current_slug: str = None
+        self._slug_trades: int  = 0
         # start live WebSocket feeds (Binance price + Polymarket books)
         self.feeds.start(on_kline_close=self._on_kline_close)
 
@@ -99,16 +100,17 @@ class Trader:
         slug = market.get("slug") or market.get("conditionId")
         secs = self.tracker.seconds_to_end(market)
 
-        # New slug we haven't traded yet → jump on it right away
-        if slug != self._traded_slug:
-            log.info(f"[roll] New active slug detected: {slug} "
-                     f"({secs:.0f}s to end)" if secs is not None else
-                     f"[roll] New active slug detected: {slug}")
-            candles = fetch_candles()
-            if candles.empty:
-                return
-            balance = self.poly.get_balance() or 1000.0
-            self._trade_active_slug(candles, balance, prefetched=market)
+        # New slug → announce and reset the per-slug trade counter
+        if slug != self._current_slug:
+            log.info(f"[roll] New active slug: {slug}" +
+                     (f" ({secs:.0f}s to end)" if secs is not None else ""))
+
+        # Re-evaluate every roll-check; the per-slug cap limits how many entries
+        candles = fetch_candles()
+        if candles.empty:
+            return
+        balance = self.poly.get_balance() or 1000.0
+        self._trade_active_slug(candles, balance, prefetched=market)
 
     def _trade_active_slug(self, candles, balance: float, prefetched: Dict = None):
         """Evaluate and (maybe) trade the current rolling 15-min BTC market."""
@@ -119,8 +121,17 @@ class Trader:
 
         slug = market.get("slug") or market.get("conditionId")
 
+        # Reset the per-slug counter whenever we roll onto a new slug
+        if slug != self._current_slug:
+            self._current_slug = slug
+            self._slug_trades  = 0
+
         # Point the live WS order-book feed at this slug's tokens
         self.feeds.subscribe_tokens(_market_token_ids(market))
+
+        # Enforce the per-slug trade cap
+        if self._slug_trades >= config.MAX_TRADES_PER_SLUG:
+            return
 
         # Don't open new positions in the final seconds before resolution
         if not self.tracker.is_tradeable(market):
@@ -130,17 +141,20 @@ class Trader:
             return
 
         self._snapshot_markets([market])
-        self._evaluate_market(market, candles, balance)
-        self._traded_slug = slug
+        traded = self._evaluate_market(market, candles, balance)
+        if traded:
+            self._slug_trades += 1
+            log.info(f"  [slug {slug}] trade {self._slug_trades}/{config.MAX_TRADES_PER_SLUG}")
 
     # ── Market evaluation ────────────────────────────────────────────────────
 
-    def _evaluate_market(self, market: Dict, candles, balance: float):
+    def _evaluate_market(self, market: Dict, candles, balance: float) -> bool:
+        """Returns True if a trade was executed."""
         market = self.poly.enrich_market(market)
         yes_price, no_price = self.poly.get_market_prices(market)
 
         if not (0.02 < yes_price < 0.98):
-            return   # near-resolved market, skip
+            return False   # near-resolved market, skip
 
         signal = self.ensemble.generate_signal(
             candles, yes_price, no_price, market
@@ -150,7 +164,7 @@ class Trader:
 
         if signal.direction == "PASS":
             log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
-            return
+            return False
 
         # Meta-model probability boost
         ml_prob = self.learner.predict_win_probability(
@@ -164,13 +178,14 @@ class Trader:
         can_trade, reason = self.risk.can_trade(size, balance)
         if not can_trade:
             log.info(f"  Blocked ({reason}): {market.get('question','')[:60]}")
-            return
+            return False
 
         log.info(
             f"  TRADE → {signal.direction} | {market.get('question','')[:60]}\n"
             f"    conf={blended_conf:.2%}  edge={signal.edge:.3f}  size=${size:.2f}"
         )
         self._execute_trade(market, signal, blended_conf, size, yes_price, no_price)
+        return True
 
     # ── Trade execution ──────────────────────────────────────────────────────
 
