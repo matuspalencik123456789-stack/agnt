@@ -65,8 +65,11 @@ def run_agent():
 
     trader = Trader()
 
-    # Run immediately on start
-    log.info("Running initial cycle...")
+    # Initial cycle: the trader's warm-up gate makes this OBSERVE & analyse the
+    # candle history (logging the detected trend) without placing a first trade
+    # until WARMUP_SECONDS have elapsed.
+    log.info(f"Running initial cycle (warm-up: analysing candles for "
+             f"{config.WARMUP_SECONDS}s before first trade)...")
     try:
         trader.run_cycle()
         trader.check_resolutions()

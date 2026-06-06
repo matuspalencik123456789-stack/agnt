@@ -73,6 +73,50 @@ def window_open_price(candles: pd.DataFrame, start: Optional[datetime]) -> Optio
         return float(candles["open"].iloc[0])
 
 
+def analyze_trend(closes: pd.Series, lookback: int = 30,
+                  min_strength: float = 0.0003) -> dict:
+    """
+    Determine the short-term price development ("vývoj") from recent candles.
+
+    Fits a linear regression to the last `lookback` closes and normalises the
+    slope by price (slope per candle, as a fraction). Also compares a fast vs
+    slow moving average for confirmation. Returns direction UP/DOWN/FLAT plus a
+    strength score so callers can require a real, non-flat trend.
+    """
+    if closes is None or len(closes) < 5:
+        return {"direction": "FLAT", "strength": 0.0, "slope": 0.0, "n": 0}
+
+    series = closes.dropna()
+    if len(series) > lookback:
+        series = series.iloc[-lookback:]
+    n = len(series)
+    y = series.to_numpy(dtype=float)
+    x = np.arange(n, dtype=float)
+
+    # least-squares slope, normalised to a per-candle fractional change
+    slope = float(np.polyfit(x, y, 1)[0])
+    norm_slope = slope / (y.mean() if y.mean() else 1.0)
+
+    # moving-average confirmation
+    fast = y[-max(3, n // 4):].mean()
+    slow = y.mean()
+    ma_up = fast > slow
+
+    strength = abs(norm_slope)
+    if strength < min_strength:
+        direction = "FLAT"
+    elif norm_slope > 0 and ma_up:
+        direction = "UP"
+    elif norm_slope < 0 and not ma_up:
+        direction = "DOWN"
+    else:
+        # slope and MA disagree → unconfirmed → treat as flat/choppy
+        direction = "FLAT"
+
+    return {"direction": direction, "strength": round(strength, 6),
+            "slope": round(norm_slope, 6), "n": n}
+
+
 def prob_up(current: float, strike: float, seconds_remaining: float,
             step_seconds: float, vol_per_step: float,
             drift_step: float = 0.0,

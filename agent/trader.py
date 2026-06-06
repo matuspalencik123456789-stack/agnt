@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 
 from agent.polymarket_client import PolymarketClient
 from agent.market_data import fetch_candles, store_candles, get_current_btc_price
-from agent.strategies.outcome_model import window_open_price
+from agent.strategies.outcome_model import window_open_price, analyze_trend
 from agent.market_tracker import MarketTracker
 from agent.websocket_feed import FeedManager, LIVE
 from agent.strategies.ensemble import EnsembleStrategy
@@ -54,6 +54,9 @@ class Trader:
         self._last_entry_ts: float = 0.0   # for the per-slug entry cooldown
         # pending early-exit confirmations: {trade_id: {"reason": str, "count": int}}
         self._exit_pending: Dict[int, dict] = {}
+        # startup time — the agent observes/analyses candles during the warm-up
+        # before it's allowed to place its first trade (no blind immediate entry)
+        self._started_at: float = time.time()
         # start live WebSocket feeds (Binance price + Polymarket books)
         self.feeds.start(on_kline_close=self._on_kline_close)
 
@@ -145,6 +148,17 @@ class Trader:
         # Point the live WS order-book feed at this slug's tokens
         self.feeds.subscribe_tokens(_market_token_ids(market))
 
+        # Warm-up: observe & analyse the candle history before the first trade.
+        elapsed = time.time() - self._started_at
+        if elapsed < config.WARMUP_SECONDS:
+            trend = analyze_trend(candles["close"], config.TREND_LOOKBACK,
+                                  config.TREND_MIN_STRENGTH)
+            log.info(f"[warm-up] analysing candles "
+                     f"({elapsed:.0f}/{config.WARMUP_SECONDS}s) — "
+                     f"trend={trend['direction']} strength={trend['strength']:.5f}; "
+                     f"not trading yet.")
+            return
+
         # Enforce the per-slug trade cap
         if self._slug_trades >= config.MAX_TRADES_PER_SLUG:
             return
@@ -204,6 +218,20 @@ class Trader:
         if signal.direction == "PASS":
             log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
             return False
+
+        # Determine the recent price development and block clearly counter-trend
+        # bets (YES = expecting UP, NO = expecting DOWN on these up/down markets).
+        trend = analyze_trend(candles["close"], config.TREND_LOOKBACK,
+                              config.TREND_MIN_STRENGTH)
+        log.info(f"  Trend: {trend['direction']} (slope={trend['slope']:.5f} "
+                 f"strength={trend['strength']:.5f})")
+        if config.REQUIRE_TREND_AGREEMENT and trend["direction"] != "FLAT":
+            expect_up = (signal.direction == "YES")
+            trend_up  = (trend["direction"] == "UP")
+            if expect_up != trend_up:
+                log.info(f"  → PASS: {signal.direction} is counter-trend "
+                         f"(price developing {trend['direction']})")
+                return False
 
         # Meta-model probability boost
         ml_prob = self.learner.predict_win_probability(

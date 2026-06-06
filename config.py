@@ -33,6 +33,17 @@ ENTRY_QUALITY_ESCALATION = float(os.getenv("ENTRY_QUALITY_ESCALATION", "1.6"))
 # Minimum seconds between two entries on the same slug (don't dump all at once).
 ENTRY_COOLDOWN_SECONDS   = int(os.getenv("ENTRY_COOLDOWN_SECONDS", "120"))
 
+# ── Warm-up & trend analysis ──────────────────────────────────────────────────
+# On startup the agent first OBSERVES and analyses the candle history for this
+# long before it's allowed to place its first trade — no blind immediate entry.
+WARMUP_SECONDS           = int(os.getenv("WARMUP_SECONDS", "90"))
+# Number of recent candles used to determine the short-term trend (the "vývoj").
+TREND_LOOKBACK           = int(os.getenv("TREND_LOOKBACK", "30"))
+# Minimum |normalised slope| for the trend to count as a real direction (not flat).
+TREND_MIN_STRENGTH       = float(os.getenv("TREND_MIN_STRENGTH", "0.0003"))
+# Require the trade's side to agree with the detected trend (block counter-trend).
+REQUIRE_TREND_AGREEMENT  = os.getenv("REQUIRE_TREND_AGREEMENT", "true").lower() == "true"
+
 # ── Transaction costs (realism) ───────────────────────────────────────────────
 # In paper mode we buy at the ASK, not the mid. When a live order book is
 # available we use its real ask; otherwise we model an assumed spread. We also
