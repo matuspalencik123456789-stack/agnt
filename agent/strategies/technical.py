@@ -7,12 +7,29 @@ from agent.strategies.indicators import rsi, macd, bollinger, adx, vwap
 
 
 def _implied_btc_direction(market_meta: dict) -> tuple[str, float]:
-    """Parse the Polymarket question to get predicted BTC direction & strike."""
+    """
+    Parse the Polymarket question to get predicted BTC direction & strike.
+
+    Handles both market types:
+      • "Will BTC be above/below $X?"  -> direction above/below + strike
+      • "Bitcoin Up or Down?" (15-min) -> direction above (YES=Up) / strike 0
+    """
     q = market_meta.get("question", "").lower()
     strike = market_meta.get("strike_price", 0.0)
+
     above = "above" in q or "exceed" in q or "higher" in q
     below = "below" in q or "under" in q or "lower" in q
-    return ("above" if above else "below" if below else "unknown"), strike
+    if above:
+        return "above", strike
+    if below:
+        return "below", strike
+
+    # "Up or Down" style markets — YES outcome means price goes UP.
+    # Treat as "above" with no strike so a bullish signal -> YES, bearish -> NO.
+    if "up or down" in q or "up/down" in q or " up " in q or q.endswith(" up") or "higher or lower" in q:
+        return "above", 0.0
+
+    return "unknown", strike
 
 
 class RSIStrategy(BaseStrategy):

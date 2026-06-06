@@ -146,8 +146,10 @@ class Trader:
             candles, yes_price, no_price, market
         )
 
+        log.info(f"  Eval: {market.get('question','')[:55]} | YES={yes_price:.3f} NO={no_price:.3f}")
+
         if signal.direction == "PASS":
-            log.debug(f"  PASS {market.get('question','')[:60]}: {signal.details.get('reason','')}")
+            log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
             return
 
         # Meta-model probability boost
