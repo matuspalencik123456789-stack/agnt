@@ -233,6 +233,15 @@ class SelfLearner:
                 "signal_data": signal_data, "side": side, "price": price
             })()
             feats = self._build_features(dummy_trade)
+            # Guard against a stale model trained on a different feature count
+            # (e.g. after adding a strategy). Invalidate so it retrains cleanly.
+            expected = getattr(self.scaler, "n_features_in_", feats.shape[0])
+            if expected != feats.shape[0]:
+                log.info(f"Meta-model feature mismatch ({feats.shape[0]} vs "
+                         f"{expected}) — discarding stale model, will retrain.")
+                self.is_fitted = False
+                self.model = None
+                return 0.5
             Xs = self.scaler.transform(feats.reshape(1, -1))
             prob = self.model.predict_proba(Xs)[0][1]
             return float(prob)
