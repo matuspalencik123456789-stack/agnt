@@ -203,7 +203,7 @@ with col_btc:
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor="#1f2235"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     else:
         st.info("Waiting for candle data...")
 
@@ -225,7 +225,7 @@ with col_eq:
             xaxis=dict(showgrid=False),
             yaxis=dict(showgrid=True, gridcolor="#1f2235"),
         )
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width='stretch')
     else:
         st.info("No resolved trades yet.")
 
@@ -245,8 +245,8 @@ with col_s:
         fig3.update_layout(template="plotly_dark", height=280,
                            margin=dict(l=0, r=0, t=10, b=0),
                            coloraxis_showscale=False)
-        st.plotly_chart(fig3, use_container_width=True)
-        st.dataframe(strat_df, use_container_width=True, hide_index=True)
+        st.plotly_chart(fig3, width='stretch')
+        st.dataframe(strat_df, width='stretch', hide_index=True)
     else:
         st.info("Weights update after first learning cycle.")
 
@@ -261,7 +261,7 @@ with col_d:
         fig4.add_vline(x=0, line_dash="dash", line_color="white", opacity=0.5)
         fig4.update_layout(template="plotly_dark", height=280,
                            margin=dict(l=0, r=0, t=10, b=0))
-        st.plotly_chart(fig4, use_container_width=True)
+        st.plotly_chart(fig4, width='stretch')
 
         col_a, col_b = st.columns(2)
         col_a.metric("Best Trade",  f"${resolved['pnl_usd'].max():.2f}")
@@ -293,7 +293,7 @@ if not trades_df.empty:
 
     st.dataframe(
         display_df.style.apply(row_color, axis=1),
-        use_container_width=True, height=350,
+        width='stretch', height=350,
     )
 else:
     st.info("No trades yet. Agent will start trading on first cycle.")
@@ -321,7 +321,7 @@ with col_op:
 
             st.dataframe(
                 show.style.apply(_pos_color, axis=1),
-                use_container_width=True, hide_index=True,
+                width='stretch', hide_index=True,
             )
         else:
             st.info("No open positions.")
@@ -330,7 +330,7 @@ with col_log:
     st.subheader("🖥️ Agent Logs")
     logs_df = load_recent_logs()
     if not logs_df.empty:
-        st.dataframe(logs_df, use_container_width=True, height=250, hide_index=True)
+        st.dataframe(logs_df, width='stretch', height=250, hide_index=True)
     else:
         st.info("No logs yet.")
 
