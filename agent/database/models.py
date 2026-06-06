@@ -94,9 +94,36 @@ def get_engine():
     return create_engine(f"sqlite:///{config.DB_PATH}", echo=False)
 
 
+# Columns that may be missing from older databases → auto-added on startup.
+_MIGRATIONS = {
+    "trades": {
+        "window_start": "DATETIME",
+        "window_end":   "DATETIME",
+        "btc_open":     "FLOAT",
+    },
+}
+
+
+def _auto_migrate(engine):
+    """Add any columns present in the ORM but missing from the live SQLite file."""
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        for table, cols in _MIGRATIONS.items():
+            try:
+                existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            except Exception:
+                continue
+            if not existing:
+                continue  # table doesn't exist yet → create_all handles it
+            for col, sqltype in cols.items():
+                if col not in existing:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {sqltype}"))
+
+
 def get_session():
     engine = get_engine()
     Base.metadata.create_all(engine)
+    _auto_migrate(engine)
     Session = sessionmaker(bind=engine)
     return Session()
 
@@ -104,3 +131,4 @@ def get_session():
 def init_db():
     engine = get_engine()
     Base.metadata.create_all(engine)
+    _auto_migrate(engine)
