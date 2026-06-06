@@ -103,51 +103,125 @@ class MarketTracker:
 
         return False
 
+    # ── Event-based discovery (the real 15-min BTC markets) ───────────────────
+    #
+    # Polymarket's recurring 15-min BTC markets use a predictable event slug:
+    #     btc-updown-15m-<unix_ts>
+    # where <unix_ts> is the period START aligned to 15-minute (900s) boundaries.
+    # We compute the current boundary and probe a small window of events, so we
+    # always lock onto the live slug and auto-roll onto the next one for free.
+
+    SLUG_PREFIX = "btc-updown-15m-"
+    PERIOD_SEC = 900  # 15 minutes
+
+    def _event_to_market(self, event: Dict) -> Optional[Dict]:
+        """Flatten a Gamma /events item into the market dict the agent expects."""
+        markets = event.get("markets") or []
+        if not markets:
+            return None
+        m = markets[0]
+        # clobTokenIds often arrives as a JSON-encoded string
+        tok = m.get("clobTokenIds")
+        if isinstance(tok, str):
+            try:
+                import json
+                tok = json.loads(tok)
+            except Exception:
+                tok = []
+        prices = m.get("outcomePrices")
+        if isinstance(prices, str):
+            try:
+                import json
+                prices = json.loads(prices)
+            except Exception:
+                prices = None
+        return {
+            "slug":         event.get("slug") or m.get("slug"),
+            "conditionId":  m.get("conditionId", ""),
+            "id":           m.get("id", event.get("id", "")),
+            "question":     m.get("question") or event.get("title", "Bitcoin Up or Down?"),
+            "clobTokenIds": tok or [],
+            "outcomePrices": prices or [0.5, 0.5],
+            "startDate":    m.get("startDate") or event.get("startDate"),
+            "endDate":      m.get("endDate")   or event.get("endDate"),
+            "volume24hr":   m.get("volume24hr", event.get("volume", 0)),
+            "liquidity":    m.get("liquidity", event.get("liquidity", 0)),
+        }
+
+    def _fetch_event_by_slug(self, slug: str) -> Optional[Dict]:
+        try:
+            resp = requests.get(f"{self._gamma}/events",
+                                params={"slug": slug}, timeout=8)
+            if not resp.ok:
+                return None
+            data = resp.json()
+            if isinstance(data, dict):
+                data = data.get("events", data.get("data", []))
+            if not data:
+                return None
+            return self._event_to_market(data[0])
+        except Exception as e:
+            log.debug(f"event fetch {slug} error: {e}")
+            return None
+
     def fetch_rolling_markets(self, limit: int = 200) -> List[Dict]:
-        """Return active BTC markets, soonest-ending first."""
+        """
+        Discover the live 15-min BTC markets via the predictable event-slug
+        pattern. Probes the current boundary plus a few neighbours so we catch
+        the active slug and pre-fetch the next one.
+        """
+        import time as _t
+        now_ts = int(_t.time())
+        base = now_ts - (now_ts % self.PERIOD_SEC)  # current 15m boundary
+        # probe previous, current and a couple upcoming boundaries
+        offsets = [-self.PERIOD_SEC, 0, self.PERIOD_SEC, 2 * self.PERIOD_SEC]
+
+        live: List[Dict] = []
+        seen = set()
+        for off in offsets:
+            ts = base + off
+            slug = f"{self.SLUG_PREFIX}{ts}"
+            mkt = self._fetch_event_by_slug(slug)
+            if mkt and mkt.get("slug") and mkt["slug"] not in seen:
+                seen.add(mkt["slug"])
+                live.append(mkt)
+
+        # fall back to text search if the slug pattern returned nothing
+        if not live:
+            live = self._fetch_rolling_markets_textsearch(limit)
+
+        now = datetime.now(timezone.utc)
+        live = [m for m in live
+                if (_parse_dt(m.get("endDate")) is None) or _parse_dt(m.get("endDate")) > now]
+        live.sort(key=lambda m: _parse_dt(m.get("endDate")) or now)
+        return live
+
+    def _fetch_rolling_markets_textsearch(self, limit: int = 200) -> List[Dict]:
+        """Legacy fallback: keyword search on /markets."""
         candidates: List[Dict] = []
-        for kw in ("bitcoin", "btc", "BTC up", "bitcoin price"):
+        for kw in ("bitcoin", "btc"):
             try:
                 resp = requests.get(
                     f"{self._gamma}/markets",
-                    params={
-                        "q": kw,
-                        "active": "true",
-                        "closed": "false",
-                        "limit": limit,
-                        "order": "endDate",
-                        "ascending": "true",
-                    },
+                    params={"q": kw, "active": "true", "closed": "false",
+                            "limit": limit, "order": "endDate", "ascending": "true"},
                     timeout=10,
                 )
                 resp.raise_for_status()
                 data = resp.json()
                 if isinstance(data, dict):
                     data = data.get("markets", [])
-                log.debug(f"Gamma API '{kw}': {len(data)} markets returned")
                 for m in data:
                     if self._is_rolling_btc(m):
                         candidates.append(m)
             except Exception as e:
-                log.error(f"fetch_rolling_markets error ({kw}): {e}")
-
-        # de-dupe by slug/conditionId
+                log.error(f"textsearch error ({kw}): {e}")
         seen, unique = set(), []
         for m in candidates:
             key = m.get("slug") or m.get("conditionId") or m.get("id")
             if key and key not in seen:
-                seen.add(key)
-                unique.append(m)
-
-        now = datetime.now(timezone.utc)
-        # keep only markets that haven't ended yet, sort by soonest end
-        live = []
-        for m in unique:
-            end = _parse_dt(m.get("endDate") or m.get("end_date"))
-            if end is None or end > now:
-                live.append(m)
-        live.sort(key=lambda m: _parse_dt(m.get("endDate") or m.get("end_date")) or now)
-        return live
+                seen.add(key); unique.append(m)
+        return unique
 
     # ── Current / next selection ─────────────────────────────────────────────
 

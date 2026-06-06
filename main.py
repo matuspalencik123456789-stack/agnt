@@ -101,9 +101,12 @@ def run_agent():
 
 
 def run_dashboard():
-    os.execvp("streamlit", [
-        "streamlit", "run", "dashboard/app.py",
-        "--server.port", "8501",
+    # Use `python3 -m streamlit` so it works even when the `streamlit` console
+    # script isn't on PATH (common with --user pip installs on macOS).
+    import sys
+    os.execv(sys.executable, [
+        sys.executable, "-m", "streamlit", "run", "dashboard/app.py",
+        "--server.port", os.getenv("DASHBOARD_PORT", "8501"),
         "--server.headless", "true",
     ])
 
