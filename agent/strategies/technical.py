@@ -323,6 +323,13 @@ class StatOutcomeStrategy(BaseStrategy):
 
         # "below" markets: YES means price ends BELOW strike
         p_yes = p_up if direction != "below" else (1.0 - p_up)
+
+        # Treat the market price as an informative prior (it aggregates many
+        # traders). Blend the model toward it so we don't fight the market with
+        # full conviction — professional Bayesian anchoring.
+        mw = float(getattr(config, "STAT_MARKET_WEIGHT", 0.35))
+        if 0.0 < yes_price < 1.0:
+            p_yes = (1.0 - mw) * p_yes + mw * yes_price
         p_no  = 1.0 - p_yes
 
         # pick the side the model favours

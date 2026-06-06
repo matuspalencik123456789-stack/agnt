@@ -25,6 +25,9 @@ STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.06"))
 STAT_MIN_MISPRICING      = float(os.getenv("STAT_MIN_MISPRICING", "0.03"))
 # Minimum professional confluence score (|−1..+1|) for price-action to act.
 PRICE_ACTION_MIN_SCORE   = float(os.getenv("PRICE_ACTION_MIN_SCORE", "0.35"))
+# How much the outcome model anchors to the market price as a prior (0..1).
+# Higher = trust the market more, fight it less. Reduces overconfident bets.
+STAT_MARKET_WEIGHT       = float(os.getenv("STAT_MARKET_WEIGHT", "0.35"))
 
 # ── Trade selectivity ("should I bother trading right now?") ──────────────────
 # Minimum quality score (confidence × edge) for the FIRST entry on a slug.
@@ -42,7 +45,7 @@ WARMUP_SECONDS           = int(os.getenv("WARMUP_SECONDS", "90"))
 # Number of recent candles used to determine the short-term trend (the "vývoj").
 TREND_LOOKBACK           = int(os.getenv("TREND_LOOKBACK", "30"))
 # Minimum |normalised slope| for the trend to count as a real direction (not flat).
-TREND_MIN_STRENGTH       = float(os.getenv("TREND_MIN_STRENGTH", "0.0003"))
+TREND_MIN_STRENGTH       = float(os.getenv("TREND_MIN_STRENGTH", "0.00002"))
 # Require the trade's side to agree with the detected trend (block counter-trend).
 REQUIRE_TREND_AGREEMENT  = os.getenv("REQUIRE_TREND_AGREEMENT", "true").lower() == "true"
 

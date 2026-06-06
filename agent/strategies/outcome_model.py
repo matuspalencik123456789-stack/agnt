@@ -120,7 +120,7 @@ def analyze_trend(closes: pd.Series, lookback: int = 30,
 def prob_up(current: float, strike: float, seconds_remaining: float,
             step_seconds: float, vol_per_step: float,
             drift_step: float = 0.0,
-            mean_rev: float = 0.30) -> Optional[float]:
+            mean_rev: float = 0.45) -> Optional[float]:
     """
     Probability that the final price exceeds `strike`.
 
@@ -150,5 +150,6 @@ def prob_up(current: float, strike: float, seconds_remaining: float,
     z = (adjusted_moved + mu_rem) / sigma_rem
     raw = _norm_cdf(z)
 
-    # Cap to [0.10, 0.90] — extreme confidence on a 15-min window is unjustified
-    return max(0.10, min(0.90, raw))
+    # Cap to [0.20, 0.80] — claiming >80% certainty on a ~coin-flip 15-min
+    # window is hubris and drives overconfident, money-losing streaks.
+    return max(0.20, min(0.80, raw))
