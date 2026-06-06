@@ -340,14 +340,16 @@ class StatOutcomeStrategy(BaseStrategy):
                    "strike": round(strike, 1), "current": round(current, 1),
                    "secs_left": round(secs_left), "vol_step": round(vol, 6)}
 
-        # need a minimum directional conviction to act at all
-        min_conv = float(getattr(config, "STAT_MIN_CONVICTION", 0.04))
+        # Require minimum conviction AND actual market mispricing.
+        # Don't bet against an efficient market just because our model feels sure.
+        min_conv = float(getattr(config, "STAT_MIN_CONVICTION", 0.06))
         if conviction < min_conv:
             details["reason"] = f"low conviction {conviction:.3f} < {min_conv}"
             return self._pass(details)
 
-        # edge = mispricing if the market underprices us, else fall back to a
-        # small floor driven by conviction (so the model's directional call still
-        # gets evaluated even when the market is fairly priced)
-        edge = mispricing if mispricing > 0 else min(conviction, 0.05)
-        return Signal(self.name, bet_side, min(model_p, 1.0), max(edge, 0.0), details)
+        min_misprice = float(getattr(config, "STAT_MIN_MISPRICING", 0.03))
+        if mispricing < min_misprice:
+            details["reason"] = f"misprice {mispricing:.3f} < {min_misprice}"
+            return self._pass(details)
+
+        return Signal(self.name, bet_side, min(model_p, 1.0), mispricing, details)

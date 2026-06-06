@@ -75,17 +75,21 @@ def window_open_price(candles: pd.DataFrame, start: Optional[datetime]) -> Optio
 
 def prob_up(current: float, strike: float, seconds_remaining: float,
             step_seconds: float, vol_per_step: float,
-            drift_step: float = 0.0) -> Optional[float]:
+            drift_step: float = 0.0,
+            mean_rev: float = 0.30) -> Optional[float]:
     """
-    Probability that the final price exceeds `strike`, given the move so far and
-    the projected random walk over the remaining time.
+    Probability that the final price exceeds `strike`.
+
+    Uses a lightly mean-reverting random walk: short-horizon crypto prices show
+    partial mean reversion, so an already-moved log-price is pulled back toward
+    zero by factor `mean_rev` before computing the remaining diffusion.
+    Result is capped to [0.10, 0.90] — extreme certainty is never warranted.
     """
     if current <= 0 or strike <= 0 or vol_per_step <= 0:
         return None
 
-    moved = math.log(current / strike)               # move already achieved
+    moved = math.log(current / strike)
     if seconds_remaining <= 0:
-        # window over → outcome is essentially decided
         return 1.0 if moved > 0 else 0.0
 
     steps_left = max(seconds_remaining / max(step_seconds, 1.0), 1e-6)
@@ -93,9 +97,14 @@ def prob_up(current: float, strike: float, seconds_remaining: float,
     if sigma_rem <= 0:
         return 1.0 if moved > 0 else 0.0
 
-    # cap drift contribution so we never get overconfident on a short window
-    mu_rem = drift_step * steps_left
-    mu_rem = max(-0.5 * sigma_rem, min(0.5 * sigma_rem, mu_rem))
+    # Mean-reversion pull: shrink the "already moved" contribution
+    adjusted_moved = moved * (1.0 - mean_rev)
 
-    z = (moved + mu_rem) / sigma_rem
-    return _norm_cdf(z)
+    mu_rem = drift_step * steps_left
+    mu_rem = max(-0.3 * sigma_rem, min(0.3 * sigma_rem, mu_rem))
+
+    z = (adjusted_moved + mu_rem) / sigma_rem
+    raw = _norm_cdf(z)
+
+    # Cap to [0.10, 0.90] — extreme confidence on a 15-min window is unjustified
+    return max(0.10, min(0.90, raw))

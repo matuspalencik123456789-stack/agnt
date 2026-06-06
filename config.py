@@ -21,7 +21,8 @@ MAX_CONCURRENT_POSITIONS = int(os.getenv("MAX_CONCURRENT_POSITIONS", "100"))
 MAX_TRADES_PER_SLUG      = int(os.getenv("MAX_TRADES_PER_SLUG", "3"))   # cap entries per 15-min slug
 MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.01"))   # 1% min edge (was 4%)
 # Minimum directional conviction (|P(up)-0.5|) for the outcome model to act.
-STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.04"))
+STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.06"))
+STAT_MIN_MISPRICING      = float(os.getenv("STAT_MIN_MISPRICING", "0.03"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 

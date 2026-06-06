@@ -6,6 +6,7 @@ from typing import List, Dict, Optional
 
 from agent.polymarket_client import PolymarketClient
 from agent.market_data import fetch_candles, store_candles, get_current_btc_price
+from agent.strategies.outcome_model import window_open_price
 from agent.market_tracker import MarketTracker
 from agent.websocket_feed import FeedManager, LIVE
 from agent.strategies.ensemble import EnsembleStrategy
@@ -184,13 +185,14 @@ class Trader:
             f"  TRADE → {signal.direction} | {market.get('question','')[:60]}\n"
             f"    conf={blended_conf:.2%}  edge={signal.edge:.3f}  size=${size:.2f}"
         )
-        self._execute_trade(market, signal, blended_conf, size, yes_price, no_price)
+        self._execute_trade(market, signal, blended_conf, size, yes_price, no_price, candles)
         return True
 
     # ── Trade execution ──────────────────────────────────────────────────────
 
     def _execute_trade(self, market: Dict, signal, confidence: float,
-                       size_usd: float, yes_price: float, no_price: float):
+                       size_usd: float, yes_price: float, no_price: float,
+                       candles=None):
         tokens = market.get("tokens", market.get("clobTokenIds", []))
         token_id = None
         for t in (tokens if isinstance(tokens, list) else []):
@@ -204,7 +206,9 @@ class Trader:
         # window metadata for local paper-mode resolution
         w_start = self._parse_dt(market.get("startDate"))
         w_end   = self._parse_dt(market.get("endDate"))
-        btc_open = get_current_btc_price()
+        # Use the actual window-start BTC price (not current price) for correct resolution
+        btc_open = (window_open_price(candles, w_start) if candles is not None else None
+                    ) or get_current_btc_price()
 
         session = get_session()
         try:

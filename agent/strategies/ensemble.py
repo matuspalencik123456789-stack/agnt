@@ -22,7 +22,7 @@ ALL_STRATEGIES: List[BaseStrategy] = [
 DEFAULT_WEIGHTS = {
     "rsi": 1.0, "macd": 1.0, "bollinger": 1.0,
     "momentum": 1.0, "vwap": 1.0, "adx": 1.0,
-    "stat_outcome": 2.5,
+    "stat_outcome": 1.5,
 }
 
 
@@ -86,8 +86,8 @@ class EnsembleStrategy:
         log.info(f"  Ensemble: YES={yes_score:.4f} NO={no_score:.4f} "
                  f"→ {direction} conf={raw_conf:.3f} price={price:.3f}")
 
-        # require simple majority (≥ 0.51)
-        if raw_conf < 0.51:
+        # require meaningful consensus (≥ 0.55)
+        if raw_conf < 0.55:
             return Signal("ensemble", "PASS", raw_conf, 0.0,
                           {"reason": f"weak consensus {raw_conf:.2f}", "yes": yes_score, "no": no_score})
 
