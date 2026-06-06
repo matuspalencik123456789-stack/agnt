@@ -253,9 +253,12 @@ class MarketTracker:
         new_slug = chosen.get("slug") or chosen.get("conditionId")
         if new_slug != self.active_slug:
             self.roll_number += 1
+            end_dt = _parse_dt(chosen.get("endDate"))
+            ends_local = (end_dt.astimezone().strftime("%H:%M:%S %Z")
+                          if end_dt else chosen.get("endDate"))
             log.info(f"Rolling onto slug #{self.roll_number}: {new_slug} | "
                      f"conditionId={chosen.get('conditionId','')} "
-                     f"id={chosen.get('id','')} (ends {chosen.get('endDate')})")
+                     f"id={chosen.get('id','')} (ends {ends_local})")
             self.active_slug = new_slug
             self.active_market = chosen
             self._persist_roll(self.roll_number, new_slug, chosen)

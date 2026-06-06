@@ -55,7 +55,7 @@ class Trader:
 
     def run_cycle(self):
         self.cycle += 1
-        log.info(f"=== Cycle #{self.cycle} @ {datetime.utcnow().isoformat()} ===")
+        log.info(f"=== Cycle #{self.cycle} @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
         self._log_event("cycle_start", {"cycle": self.cycle})
 
         # 1. Refresh strategy weights from learning
