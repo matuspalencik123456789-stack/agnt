@@ -27,12 +27,17 @@ class Trade(Base):
     signal_data    = Column(JSON)             # raw signals at entry
 
     # outcome (filled after resolution)
-    resolved       = Column(Boolean, default=False)
-    resolution     = Column(String(4))        # YES / NO
-    exit_price     = Column(Float)
-    pnl_usd        = Column(Float)
-    roi_pct        = Column(Float)
-    closed_at      = Column(DateTime)
+    resolved         = Column(Boolean, default=False)
+    resolution       = Column(String(4))        # YES / NO
+    exit_price       = Column(Float)
+    pnl_usd          = Column(Float)
+    roi_pct          = Column(Float)
+    closed_at        = Column(DateTime)
+
+    # for paper-mode local resolution: window start/end + btc open price
+    window_start     = Column(DateTime)
+    window_end       = Column(DateTime)
+    btc_open         = Column(Float)            # BTC price at window start
 
 
 class StrategyWeight(Base):

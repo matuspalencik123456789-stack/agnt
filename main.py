@@ -80,7 +80,7 @@ def run_agent():
     scheduler.add_job(
         trader.check_resolutions,
         "interval",
-        minutes=5,
+        seconds=30,
         id="resolution_check",
         max_instances=1,
     )

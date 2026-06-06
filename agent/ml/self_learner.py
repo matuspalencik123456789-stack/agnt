@@ -107,6 +107,30 @@ class SelfLearner:
         finally:
             session.close()
 
+    def record_trade_result(self, strategy: str, won: bool, roi_pct: float):
+        """Immediate bandit update on a single resolved trade."""
+        session = get_session()
+        try:
+            row = session.query(StrategyWeight).filter_by(name=strategy).first()
+            if not row:
+                row = StrategyWeight(name=strategy, weight=1.0,
+                                     win_rate=0.5, avg_roi=0.0, trade_cnt=0)
+                session.add(row)
+            n = (row.trade_cnt or 0) + 1
+            lr = config.LEARNING_RATE
+            row.win_rate   = round((row.win_rate or 0.5) * (1 - lr) + int(won) * lr, 4)
+            row.avg_roi    = round((row.avg_roi  or 0.0) * (1 - lr) + roi_pct  * lr, 4)
+            row.weight     = round(max(0.1, min(3.0,
+                                row.win_rate * (1 + row.avg_roi / 100))), 4)
+            row.trade_cnt  = n
+            row.updated_at = datetime.utcnow()
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            log.debug(f"record_trade_result: {e}")
+        finally:
+            session.close()
+
     # ── Meta-model (GBM edge predictor) ─────────────────────────────────────
 
     def _build_features(self, trade: Trade) -> np.ndarray | None:

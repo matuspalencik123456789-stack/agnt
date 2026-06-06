@@ -1,8 +1,8 @@
 """Main trading orchestrator — runs every 15 minutes."""
 import logging
 import time
-from datetime import datetime
-from typing import List, Dict
+from datetime import datetime, timezone
+from typing import List, Dict, Optional
 
 from agent.polymarket_client import PolymarketClient
 from agent.market_data import fetch_candles, store_candles, get_current_btc_price
@@ -201,6 +201,11 @@ class Trader:
         price = yes_price if signal.direction == "YES" else no_price
         order_id = self.poly.place_market_order(token_id or "", signal.direction, size_usd, price)
 
+        # window metadata for local paper-mode resolution
+        w_start = self._parse_dt(market.get("startDate"))
+        w_end   = self._parse_dt(market.get("endDate"))
+        btc_open = get_current_btc_price()
+
         session = get_session()
         try:
             trade = Trade(
@@ -215,6 +220,9 @@ class Trader:
                 order_id=order_id,
                 strategy_used="ensemble",
                 signal_data=signal.details,
+                window_start=w_start.replace(tzinfo=None) if w_start else None,
+                window_end=w_end.replace(tzinfo=None) if w_end else None,
+                btc_open=btc_open or 0.0,
             )
             session.add(trade)
             session.commit()
@@ -227,27 +235,88 @@ class Trader:
 
     # ── Resolution checker ───────────────────────────────────────────────────
 
+    @staticmethod
+    def _parse_dt(value) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            s = str(value).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            return None
+
     def check_resolutions(self):
-        """Check open trades and mark resolved if market has settled."""
+        """
+        Two-pass resolver:
+        1. Ask Polymarket API for official YES/NO (works for live trades).
+        2. Paper-mode local resolution: once the window endDate has passed,
+           fetch the current BTC price. If price > btc_open → YES won, else NO won.
+           This gives immediate feedback without waiting for Polymarket to settle.
+        """
         session = get_session()
         try:
             open_trades = session.query(Trade).filter(Trade.resolved == False).all()
-            for trade in open_trades:
-                market = self._fetch_market_by_id(trade.market_id)
-                if not market:
-                    continue
-                resolved_val = market.get("resolved")
-                resolution   = market.get("resolution", "")
+            now_utc = datetime.now(timezone.utc)
 
-                if resolved_val or resolution in ("YES", "NO"):
-                    trade.resolved   = True
-                    trade.resolution = resolution or ("YES" if resolved_val else "NO")
-                    exit_p = 1.0 if trade.resolution == trade.side else 0.0
-                    trade.exit_price = exit_p
-                    trade.pnl_usd    = round((exit_p - trade.price) * trade.shares, 4)
-                    trade.roi_pct    = round((exit_p / trade.price - 1) * 100, 2) if trade.price else 0
-                    trade.closed_at  = datetime.utcnow()
-                    log.info(f"Resolved trade {trade.id}: {trade.resolution}  PnL=${trade.pnl_usd:.2f}")
+            for trade in open_trades:
+                resolution = None
+
+                # ── Pass 1: official Polymarket resolution ────────────────
+                try:
+                    market = self._fetch_market_by_id(trade.market_id)
+                    resolved_val = market.get("resolved")
+                    api_res = market.get("resolution", "")
+                    if resolved_val or api_res in ("YES", "NO"):
+                        resolution = api_res or ("YES" if resolved_val else "NO")
+                except Exception:
+                    pass
+
+                # ── Pass 2: local BTC-price paper resolution ──────────────
+                if not resolution and trade.window_end and trade.btc_open:
+                    w_end_aware = trade.window_end.replace(tzinfo=timezone.utc)
+                    grace = 30  # seconds after end to allow price to settle
+                    if (now_utc - w_end_aware).total_seconds() >= grace:
+                        btc_now = get_current_btc_price()
+                        if btc_now and trade.btc_open:
+                            # YES = price ended ABOVE window open
+                            resolution = "YES" if btc_now >= trade.btc_open else "NO"
+                            log.info(
+                                f"  [paper resolve] trade {trade.id}: "
+                                f"BTC {trade.btc_open:.0f} → {btc_now:.0f}  → {resolution}"
+                            )
+
+                if not resolution:
+                    continue
+
+                won = (resolution == trade.side)
+                # In a binary market: winner gets $1/share, loser gets $0
+                exit_p = 1.0 if won else 0.0
+                pnl    = round((exit_p - trade.price) * trade.shares, 4)
+                roi    = round((exit_p / trade.price - 1) * 100, 2) if trade.price else 0
+
+                trade.resolved   = True
+                trade.resolution = resolution
+                trade.exit_price = exit_p
+                trade.pnl_usd    = pnl
+                trade.roi_pct    = roi
+                trade.closed_at  = datetime.utcnow()
+
+                emoji = "✅ WIN" if won else "❌ LOSS"
+                log.info(
+                    f"  {emoji} trade {trade.id}: side={trade.side} res={resolution} "
+                    f"PnL=${pnl:+.4f}  ROI={roi:+.1f}%"
+                )
+
+                # feed result back to self-learner immediately
+                try:
+                    self.learner.record_trade_result(
+                        trade.strategy_used or "ensemble", won, roi
+                    )
+                except Exception as e:
+                    log.debug(f"learner.record: {e}")
 
             session.commit()
         except Exception as e:

@@ -86,9 +86,9 @@ with st.sidebar:
     st.title("⚙️ Agent Control")
     st.divider()
 
-    auto_refresh = st.toggle("Auto-refresh (30s)", value=True)
+    auto_refresh = st.toggle("Auto-refresh (15s)", value=True)
     if auto_refresh:
-        st.caption("Dashboard auto-refreshes every 30 seconds.")
+        st.caption("Dashboard auto-refreshes every 15 seconds.")
 
     st.divider()
     st.markdown("**Configuration**")
@@ -274,27 +274,56 @@ st.divider()
 st.subheader("📋 Trade History")
 
 if not trades_df.empty:
-    display_cols = ["timestamp", "question", "side", "price", "size_usd",
-                    "resolved", "resolution", "pnl_usd", "roi_pct"]
-    display_df = trades_df[display_cols].copy()
-    display_df["timestamp"] = pd.to_datetime(display_df["timestamp"]).dt.strftime("%m-%d %H:%M")
-    display_df["question"]  = display_df["question"].str[:70]
-    display_df["price"]     = display_df["price"].map("{:.3f}".format)
-    display_df["size_usd"]  = display_df["size_usd"].map("${:.2f}".format)
-    display_df["pnl_usd"]   = display_df["pnl_usd"].map(lambda x: f"${x:+.2f}" if pd.notna(x) else "—")
-    display_df["roi_pct"]   = display_df["roi_pct"].map(lambda x: f"{x:.1f}%" if pd.notna(x) else "—")
+    display_df = trades_df.copy()
+    display_df["time"]    = pd.to_datetime(display_df["timestamp"]).dt.strftime("%H:%M:%S")
+    display_df["market"]  = display_df["question"].str[:55]
+    display_df["stake"]   = display_df["size_usd"].map("${:.2f}".format)
+    display_df["entry"]   = display_df["price"].map("{:.3f}".format)
+
+    def _outcome(row):
+        if not row["resolved"]:
+            return "⏳ open"
+        won = row["resolution"] == row["side"]
+        return "✅ WIN" if won else "❌ LOSS"
+
+    def _pnl(row):
+        if pd.isna(row["pnl_usd"]):
+            return "—"
+        return f"${row['pnl_usd']:+.4f}"
+
+    def _roi(row):
+        if pd.isna(row["roi_pct"]):
+            return "—"
+        arrow = "▲" if row["roi_pct"] > 0 else ("▼" if row["roi_pct"] < 0 else "=")
+        return f"{arrow} {abs(row['roi_pct']):.1f}%"
+
+    display_df["outcome"] = display_df.apply(_outcome, axis=1)
+    display_df["P&L"]     = display_df.apply(_pnl,     axis=1)
+    display_df["ROI"]     = display_df.apply(_roi,     axis=1)
+
+    show_cols = ["time", "side", "market", "entry", "stake", "outcome", "P&L", "ROI"]
 
     def row_color(row):
-        if row["pnl_usd"].startswith("$+"):
-            return ["background-color: #0d3323"] * len(row)
-        elif row["pnl_usd"].startswith("$-"):
-            return ["background-color: #3b0d0d"] * len(row)
-        return [""] * len(row)
+        if "WIN"  in str(row["outcome"]): return ["background-color: #0d3323"] * len(row)
+        if "LOSS" in str(row["outcome"]): return ["background-color: #3b0d0d"] * len(row)
+        return ["background-color: #1a1d26"] * len(row)
 
     st.dataframe(
-        display_df.style.apply(row_color, axis=1),
-        width='stretch', height=350,
+        display_df[show_cols].style.apply(row_color, axis=1),
+        width='stretch', height=380,
+        hide_index=True,
     )
+
+    # summary counts below the table
+    if not resolved.empty:
+        n_win  = int((resolved["pnl_usd"] > 0).sum())
+        n_loss = int((resolved["pnl_usd"] <= 0).sum())
+        st.caption(
+            f"Resolved: **{len(resolved)}** total — "
+            f"✅ {n_win} wins  ❌ {n_loss} losses  |  "
+            f"Best: **${resolved['pnl_usd'].max():+.4f}**  "
+            f"Worst: **${resolved['pnl_usd'].min():+.4f}**"
+        )
 else:
     st.info("No trades yet. Agent will start trading on first cycle.")
 
@@ -337,5 +366,5 @@ with col_log:
 # ── Auto-refresh ──────────────────────────────────────────────────────────────
 if auto_refresh:
     import time
-    time.sleep(30)
+    time.sleep(15)
     st.rerun()
