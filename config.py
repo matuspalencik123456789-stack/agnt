@@ -15,7 +15,9 @@ GAMMA_API  = "https://gamma-api.polymarket.com"
 # ── Trading ──────────────────────────────────────────────────────────────────
 TRADING_INTERVAL_MINUTES = 15
 MAX_POSITION_SIZE_USD    = float(os.getenv("MAX_POSITION_SIZE_USD", "5"))   # max $5 per trade
-MAX_CONCURRENT_POSITIONS = int(os.getenv("MAX_CONCURRENT_POSITIONS", "3"))
+# Global cap on simultaneously-open positions. Set high: per-window exposure is
+# already bounded by MAX_TRADES_PER_SLUG, and positions auto-resolve each window.
+MAX_CONCURRENT_POSITIONS = int(os.getenv("MAX_CONCURRENT_POSITIONS", "100"))
 MAX_TRADES_PER_SLUG      = int(os.getenv("MAX_TRADES_PER_SLUG", "3"))   # cap entries per 15-min slug
 MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.01"))   # 1% min edge (was 4%)
 # Minimum directional conviction (|P(up)-0.5|) for the outcome model to act.

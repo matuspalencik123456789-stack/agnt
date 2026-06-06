@@ -120,9 +120,15 @@ def run_dashboard():
 
 
 def launch_dashboard_subprocess():
-    """Start streamlit as a child process so the agent can keep running."""
+    """Start streamlit as a child process so the agent can keep running.
+
+    Its stdout/stderr (plotly/streamlit warnings) go to logs/dashboard.log so
+    they don't flood the agent's terminal.
+    """
     import subprocess
-    return subprocess.Popen(_streamlit_cmd())
+    os.makedirs("logs", exist_ok=True)
+    dash_log = open("logs/dashboard.log", "a")
+    return subprocess.Popen(_streamlit_cmd(), stdout=dash_log, stderr=dash_log)
 
 
 def main():
