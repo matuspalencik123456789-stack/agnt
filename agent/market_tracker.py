@@ -39,6 +39,37 @@ class MarketTracker:
         self._gamma = config.GAMMA_API
         self.active_slug: Optional[str] = None
         self.active_market: Optional[Dict] = None
+        self.roll_number: int = self._load_last_roll_number()
+
+    def _load_last_roll_number(self) -> int:
+        """Resume the slug counter from the DB so it survives restarts."""
+        try:
+            from agent.database.models import get_session, AgentLog
+            s = get_session()
+            row = (s.query(AgentLog)
+                     .filter(AgentLog.level == "slug_roll")
+                     .order_by(AgentLog.id.desc()).first())
+            n = int(row.data.get("number", 0)) if row and row.data else 0
+            s.close()
+            return n
+        except Exception:
+            return 0
+
+    def _persist_roll(self, number: int, slug: str, market: Dict):
+        """Record the active slug + its real Polymarket ids for the dashboard."""
+        try:
+            from agent.database.models import get_session, AgentLog
+            s = get_session()
+            s.add(AgentLog(level="slug_roll", message=f"Slug #{number}: {slug}",
+                           data={"number": number,
+                                 "slug": slug,
+                                 "condition_id": market.get("conditionId", ""),
+                                 "market_id": str(market.get("id", "")),
+                                 "end": str(market.get("endDate") or ""),
+                                 "question": market.get("question", "")}))
+            s.commit(); s.close()
+        except Exception as e:
+            log.debug(f"persist_roll error: {e}")
 
     # ── Discovery ────────────────────────────────────────────────────────────
 
@@ -137,10 +168,13 @@ class MarketTracker:
 
         new_slug = chosen.get("slug") or chosen.get("conditionId")
         if new_slug != self.active_slug:
-            log.info(f"Rolling onto 15-min BTC slug: {new_slug} "
-                     f"(ends {chosen.get('endDate')})")
+            self.roll_number += 1
+            log.info(f"Rolling onto slug #{self.roll_number}: {new_slug} | "
+                     f"conditionId={chosen.get('conditionId','')} "
+                     f"id={chosen.get('id','')} (ends {chosen.get('endDate')})")
             self.active_slug = new_slug
             self.active_market = chosen
+            self._persist_roll(self.roll_number, new_slug, chosen)
         return chosen
 
     def seconds_to_end(self, market: Dict) -> Optional[float]:

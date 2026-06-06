@@ -115,17 +115,27 @@ with st.sidebar:
     st.divider()
     st.markdown("**🔄 Active 15-min slug**")
     try:
-        from agent.market_tracker import MarketTracker
-        _tracker = MarketTracker()
-        _active = _tracker.get_current_market()
-        if _active:
-            _slug = _active.get("slug") or _active.get("conditionId")
-            _secs = _tracker.seconds_to_end(_active)
-            st.caption(f"`{_slug}`")
-            if _secs is not None:
-                st.caption(f"⏱️ ends in {int(max(_secs,0))}s — auto-rolls next")
+        from agent.database.models import get_session as _gs, AgentLog as _AL
+        _s = _gs()
+        _row = (_s.query(_AL).filter(_AL.level == "slug_roll")
+                  .order_by(_AL.id.desc()).first())
+        _data = dict(_row.data) if (_row and _row.data) else {}
+        _total = _s.query(_AL).filter(_AL.level == "slug_roll").count()
+        _s.close()
+        if _data:
+            st.metric("Slug #", _data.get("number", "—"))
+            st.caption("**Polymarket slug:**")
+            st.code(_data.get("slug", ""), language=None)
+            if _data.get("condition_id"):
+                st.caption("**conditionId:**")
+                st.code(_data.get("condition_id", ""), language=None)
+            if _data.get("market_id"):
+                st.caption(f"market id: `{_data.get('market_id','')}`")
+            if _data.get("end"):
+                st.caption(f"ends: {_data['end']}")
+            st.caption(f"Total slugs traded: {_total}")
         else:
-            st.caption("No active rolling slug found.")
+            st.caption("No slug yet — start `python main.py --both`.")
     except Exception as e:
         st.caption(f"tracker error: {e}")
 
