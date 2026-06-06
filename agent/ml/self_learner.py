@@ -35,7 +35,7 @@ class SelfLearner:
     def get_weights(self) -> Dict[str, float]:
         session = get_session()
         try:
-            seed = {"stat_outcome": 2.5}   # outcome model starts heavier
+            seed = {"stat_outcome": 1.5}   # outcome model starts slightly heavier
             weights = {}
             for name in STRATEGY_NAMES:
                 row = session.query(StrategyWeight).filter_by(name=name).first()
@@ -72,22 +72,29 @@ class SelfLearner:
             n = len(trades)
 
             for i, trade in enumerate(trades):
-                strat = trade.strategy_used or "ensemble"
-                if strat not in strategy_stats:
-                    continue
                 w = decay ** (n - 1 - i)   # recent trades matter more
-                won = (trade.pnl_usd or 0) > 0
-                strategy_stats[strat]["wins"]      += w * int(won)
-                strategy_stats[strat]["total"]     += w
-                strategy_stats[strat]["total_roi"] += w * (trade.roi_pct or 0)
+                resolution = trade.resolution
+                sub = (trade.signal_data or {}).get("sub", {})
+                # Credit each strategy by whether its directional call was right.
+                for name, info in sub.items():
+                    if name not in strategy_stats:
+                        continue
+                    direction = info.get("dir")
+                    if direction not in ("YES", "NO"):
+                        continue
+                    correct = (direction == resolution)
+                    roi = (trade.roi_pct or 0) if correct else -abs(trade.roi_pct or 0)
+                    strategy_stats[name]["wins"]      += w * int(correct)
+                    strategy_stats[name]["total"]     += w
+                    strategy_stats[name]["total_roi"] += w * roi
 
             for name, stats in strategy_stats.items():
                 if stats["total"] == 0:
                     continue
                 win_rate = stats["wins"] / stats["total"]
                 avg_roi  = stats["total_roi"] / stats["total"]
-                # weight = win_rate * (1 + avg_roi / 100), clamp 0.1–3.0
-                new_weight = max(0.1, min(3.0, win_rate * (1 + avg_roi / 100)))
+                # weight emphasises directional accuracy vs a coin-flip baseline
+                new_weight = max(0.1, min(3.0, (win_rate / 0.5) * (1 + avg_roi / 200)))
 
                 row = session.query(StrategyWeight).filter_by(name=name).first()
                 if not row:
@@ -107,23 +114,55 @@ class SelfLearner:
         finally:
             session.close()
 
-    def record_trade_result(self, strategy: str, won: bool, roi_pct: float):
-        """Immediate bandit update on a single resolved trade."""
+    def _update_one(self, session, name: str, correct: bool, roi_pct: float):
+        """EMA bandit update of a single strategy's weight."""
+        row = session.query(StrategyWeight).filter_by(name=name).first()
+        if not row:
+            row = StrategyWeight(name=name, weight=1.0,
+                                 win_rate=0.5, avg_roi=0.0, trade_cnt=0)
+            session.add(row)
+        n  = (row.trade_cnt or 0) + 1
+        lr = config.LEARNING_RATE
+        row.win_rate  = round((row.win_rate or 0.5) * (1 - lr) + int(correct) * lr, 4)
+        row.avg_roi   = round((row.avg_roi  or 0.0) * (1 - lr) + roi_pct      * lr, 4)
+        # weight emphasises *directional accuracy*: above 0.5 win-rate → >1, below → <1
+        row.weight    = round(max(0.1, min(3.0,
+                            (row.win_rate / 0.5) * (1 + row.avg_roi / 200))), 4)
+        row.trade_cnt = n
+        row.updated_at = datetime.utcnow()
+        return row.win_rate, row.weight
+
+    def record_trade_result(self, strategy: str, won: bool, roi_pct: float,
+                            signal_data: dict = None, resolution: str = None):
+        """
+        Credit-assignment learning. The agent now judges EACH contributing
+        strategy by whether its own directional call matched the real outcome —
+        this is the agent's "mind": it figures out which signals were actually
+        right, independent of what the ensemble decided to trade.
+        """
         session = get_session()
         try:
-            row = session.query(StrategyWeight).filter_by(name=strategy).first()
-            if not row:
-                row = StrategyWeight(name=strategy, weight=1.0,
-                                     win_rate=0.5, avg_roi=0.0, trade_cnt=0)
-                session.add(row)
-            n = (row.trade_cnt or 0) + 1
-            lr = config.LEARNING_RATE
-            row.win_rate   = round((row.win_rate or 0.5) * (1 - lr) + int(won) * lr, 4)
-            row.avg_roi    = round((row.avg_roi  or 0.0) * (1 - lr) + roi_pct  * lr, 4)
-            row.weight     = round(max(0.1, min(3.0,
-                                row.win_rate * (1 + row.avg_roi / 100))), 4)
-            row.trade_cnt  = n
-            row.updated_at = datetime.utcnow()
+            # 1. Always update the ensemble's own track record.
+            self._update_one(session, "ensemble", won, roi_pct)
+
+            # 2. Credit/blame each sub-strategy by directional correctness.
+            sub = (signal_data or {}).get("sub", {})
+            if sub and resolution in ("YES", "NO"):
+                for name, info in sub.items():
+                    if name not in STRATEGY_NAMES:
+                        continue
+                    direction = info.get("dir")
+                    if direction not in ("YES", "NO"):
+                        continue
+                    # the strategy was "correct" if it called the winning side
+                    correct = (direction == resolution)
+                    # reward correct calls with +roi, wrong calls with -roi magnitude
+                    signed_roi = roi_pct if correct else -abs(roi_pct)
+                    wr, w = self._update_one(session, name, correct, signed_roi)
+                    log.info(f"  [learn] {name}: called {direction} | "
+                             f"actual {resolution} | {'✓' if correct else '✗'} "
+                             f"→ win_rate={wr:.2%} weight={w:.3f}")
+
             session.commit()
         except Exception as e:
             session.rollback()

@@ -314,10 +314,12 @@ class Trader:
                     f"PnL=${pnl:+.4f}  ROI={roi:+.1f}%"
                 )
 
-                # feed result back to self-learner immediately
+                # feed result back to self-learner immediately — pass the full
+                # signal so the agent can credit/blame each contributing strategy
                 try:
                     self.learner.record_trade_result(
-                        trade.strategy_used or "ensemble", won, roi
+                        trade.strategy_used or "ensemble", won, roi,
+                        signal_data=trade.signal_data, resolution=resolution,
                     )
                 except Exception as e:
                     log.debug(f"learner.record: {e}")
