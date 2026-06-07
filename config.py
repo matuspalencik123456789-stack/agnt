@@ -55,7 +55,24 @@ REQUIRE_TREND_AGREEMENT  = os.getenv("REQUIRE_TREND_AGREEMENT", "true").lower() 
 # subtract a fee on the notional. This makes paper P&L match live reality —
 # without it a coin-flip strategy looks profitable but bleeds to the spread.
 PAPER_SPREAD             = float(os.getenv("PAPER_SPREAD", "0.02"))   # 2¢ assumed bid/ask spread
-FEE_RATE                 = float(os.getenv("FEE_RATE", "0.0"))        # fraction of notional per trade
+FEE_RATE                 = float(os.getenv("FEE_RATE", "0.0"))        # legacy flat fee (unused if FEE_ENABLED)
+
+# Polymarket charges a TAKER fee on market orders (our paper orders are takers).
+# Crypto is the most expensive category. The real on-chain formula is:
+#     fee = shares × feeRate × p × (1 − p)
+# which peaks at p=0.50 (max uncertainty) and tapers to ~0 near 0/1. For crypto
+# feeRate = 0.072 → max $1.80 per 100 shares (1.8%) at a 50¢ price. Takers pay on
+# BOTH buy and sell, so an early sell incurs the fee twice (entry + exit) — we
+# model that so paper P&L matches live and we never "win" a trade the fees eat.
+FEE_ENABLED              = os.getenv("FEE_ENABLED", "true").lower() == "true"
+CRYPTO_FEE_RATE          = float(os.getenv("CRYPTO_FEE_RATE", "0.072"))
+
+
+def taker_fee(shares: float, price: float) -> float:
+    """Polymarket crypto taker fee in USDC for `shares` filled at `price`."""
+    if not FEE_ENABLED or shares <= 0 or not (0.0 < price < 1.0):
+        return 0.0
+    return CRYPTO_FEE_RATE * shares * price * (1.0 - price)
 
 # ── Early exit / position management ("sell mid-trade if something changes") ──
 # The agent can close a position BEFORE the window resolves to lock in a profit

@@ -365,6 +365,18 @@ class Trader:
                 # ── candidate exit reason (not yet confirmed) ──────────────
                 reason = None
                 if sell_px >= config.TAKE_PROFIT_PRICE:
+                    # Make sure the take-profit is still net-positive AFTER the
+                    # taker fee on both the original buy and this sell — never
+                    # sell into a "profit" the fees would eat.
+                    shares    = trade.shares or 0
+                    net = ((sell_px - trade.price) * shares
+                           - config.taker_fee(shares, trade.price or 0)
+                           - config.taker_fee(shares, sell_px))
+                    if net <= 0:
+                        self._exit_pending.pop(trade.id, None)
+                        log.info(f"  [hold {trade.id}] take-profit bid {sell_px:.3f} "
+                                 f"but net after fees ${net:+.4f} ≤ 0 — holding")
+                        continue
                     reason = f"take-profit (bid {sell_px:.3f} ≥ {config.TAKE_PROFIT_PRICE})"
                 elif sell_px <= config.STOP_LOSS_PRICE:
                     # only cut the loss if the MODEL also no longer backs our side
@@ -418,9 +430,17 @@ class Trader:
             return None
 
     def _close_position_early(self, session, trade, sell_price: float, reason: str):
-        """Sell a position before the window resolves; record realised P&L."""
-        fee = config.FEE_RATE * (trade.size_usd or 0)
-        pnl = round((sell_price - trade.price) * (trade.shares or 0) - fee, 4)
+        """Sell a position before the window resolves; record realised P&L.
+
+        An early sell is a TAKER on both legs, so we pay the crypto taker fee
+        twice — once on the original buy, once on this sell. Both are subtracted
+        so a marginal take-profit can't look like a win the fees actually ate.
+        """
+        shares    = trade.shares or 0
+        entry_fee = config.taker_fee(shares, trade.price or 0)
+        exit_fee  = config.taker_fee(shares, sell_price)
+        fee = entry_fee + exit_fee
+        pnl = round((sell_price - trade.price) * shares - fee, 4)
         roi = round((pnl / trade.size_usd) * 100, 2) if trade.size_usd else 0
         won = pnl > 0
 
@@ -504,9 +524,11 @@ class Trader:
                     continue
 
                 won = (resolution == trade.side)
-                # In a binary market: winner gets $1/share, loser gets $0
+                # In a binary market: winner gets $1/share, loser gets $0.
+                # Settlement isn't a taker order, so only the entry buy paid a
+                # taker fee — subtract that one fee here.
                 exit_p = 1.0 if won else 0.0
-                fee    = config.FEE_RATE * (trade.size_usd or 0)
+                fee    = config.taker_fee(trade.shares or 0, trade.price or 0)
                 pnl    = round((exit_p - trade.price) * trade.shares - fee, 4)
                 roi    = round((pnl / trade.size_usd) * 100, 2) if trade.size_usd else 0
 
