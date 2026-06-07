@@ -219,25 +219,6 @@ class Trader:
             log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
             return False
 
-        # ── Principled-model veto ─────────────────────────────────────────────
-        # The digital-option model (stat_outcome) is the only signal that actually
-        # models the thing being predicted (will price end above the window open).
-        # The 6 technical indicators are built for trending spot markets and on a
-        # flat 15-min binary are largely noise — and because the ensemble combines
-        # by vote-share, they routinely OUTVOTE the principled model and even bet
-        # the OPPOSITE side. Live logs: every trade where stat_outcome agreed won;
-        # every trade where it PASSed or disagreed lost. So give it a veto: only
-        # enter when the outcome model is non-PASS AND points the SAME way.
-        if config.REQUIRE_STAT_AGREEMENT:
-            stat = self._stat_signal(candles, yes_price, no_price, market)
-            if stat is None or stat.direction == "PASS" or stat.direction != signal.direction:
-                sd = stat.direction if stat is not None else "n/a"
-                reason = stat.details.get("reason", "") if stat is not None else "model n/a"
-                log.info(f"  → PASS: outcome model does not back {signal.direction} "
-                         f"(model says {sd}{f' — {reason}' if reason else ''}) — "
-                         f"technical-only signal, skipping")
-                return False
-
         # Determine the recent price development and block clearly counter-trend
         # bets (YES = expecting UP, NO = expecting DOWN on these up/down markets).
         # Only block when the trend is GENUINELY STRONG — a micro-slope (e.g.
@@ -323,12 +304,20 @@ class Trader:
         else:
             expected_fees = entry_fee
 
-        net_edge = blended_conf - price - expected_fees
+        # The edge that JUSTIFIES a trade must come from the principled model
+        # diverging from the market (fair_side − ask), NOT from the technical tilt
+        # inflating our confidence. Otherwise momentum/RSI manufacture a fake edge
+        # over a fairly-priced market. The technical refinement still feeds sizing
+        # via `blended_conf`; it just can't conjure a reason to enter on its own.
+        fair_yes  = signal.details.get("fair_yes")
+        fair_side = (fair_yes if signal.direction == "YES" else 1.0 - fair_yes) \
+                    if fair_yes is not None else blended_conf
+        net_edge = fair_side - price - expected_fees
         eff_edge = max(0.0, net_edge)
         if net_edge < config.FEE_EDGE_MARGIN:
-            log.info(f"  → PASS: edge after fees {net_edge:+.4f} "
+            log.info(f"  → PASS: model edge after fees {net_edge:+.4f} "
                      f"< margin {config.FEE_EDGE_MARGIN} "
-                     f"(conf={blended_conf:.3f} fill={price:.3f} "
+                     f"(fair={fair_side:.3f} fill={price:.3f} "
                      f"fees={expected_fees:.4f} early_exit={config.ENABLE_EARLY_EXIT})")
             return False
 

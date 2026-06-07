@@ -128,12 +128,15 @@ STOP_LOSS_MODEL_MAXPROB  = float(os.getenv("STOP_LOSS_MODEL_MAXPROB", "0.45"))
 # because it's cheap — the exact loop that burned a whole streak of trades.
 FADE_MARKET_PRICE_FLOOR   = float(os.getenv("FADE_MARKET_PRICE_FLOOR", "0.30"))
 FADE_MARKET_MODEL_MINPROB = float(os.getenv("FADE_MARKET_MODEL_MINPROB", "0.55"))
-# Principled-model veto: only enter when the digital-option model (stat_outcome)
-# is non-PASS AND agrees with the ensemble direction. The 6 technical indicators
-# are noise on a flat 15-min binary and routinely outvote the one model that
-# understands the market — every losing whipsaw trade in live logs had the
-# outcome model PASSing or betting the opposite side.
-REQUIRE_STAT_AGREEMENT    = os.getenv("REQUIRE_STAT_AGREEMENT", "true").lower() == "true"
+# ── Probability-first core ────────────────────────────────────────────────────
+# The ensemble decision is driven by the digital-option model's fair probability
+# (stat_outcome), not by vote-share. The technical indicators only REFINE that
+# probability by a bounded amount in log-odds space and can never flip its
+# direction. PROB_MIN_CONVICTION: minimum |p_yes − 0.5| before we'll trade (below
+# it the market is a coin-flip and we pass). TECH_TILT_MAX: largest log-odds nudge
+# a unanimous technical read may add (0.6 ≈ moves a coin-flip to ~0.65).
+PROB_MIN_CONVICTION       = float(os.getenv("PROB_MIN_CONVICTION", "0.05"))
+TECH_TILT_MAX             = float(os.getenv("TECH_TILT_MAX", "0.6"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 # Minimum weight below which a strategy is excluded from ensemble voting entirely.
