@@ -260,6 +260,40 @@ class Trader:
                      f"(0.50 ± {dz}) — max fee, near coin-flip")
             return False
 
+        # ── Don't buy straight into a forced exit ─────────────────────────────
+        # If the current best BID is already at/below the stop-loss, opening here
+        # means an instant early-exit at a loss: we pay the ask, but the bid is
+        # already under water. This is the exact loop that burned trades 226-230 —
+        # buy YES @ 0.095 while the bid is 0.075 ≤ 0.25 stop-loss, get stopped out
+        # 30s later, re-enter, repeat until the circuit breaker trips.
+        if config.ENABLE_EARLY_EXIT and config.STOP_LOSS_PRICE > 0:
+            bid_now = self.poly.get_sell_price(token_id, mid_price)
+            if bid_now <= config.STOP_LOSS_PRICE:
+                log.info(f"  → PASS: bid {bid_now:.3f} already ≤ stop-loss "
+                         f"{config.STOP_LOSS_PRICE} — entry would force an immediate "
+                         f"exit at a loss")
+                return False
+
+        # ── "Don't fade a decided market" gate ────────────────────────────────
+        # edge = (vote-confidence − price) REWARDS buying cheap tokens: the more
+        # certainly the book has priced our side as a loser (e.g. YES at 0.085),
+        # the bigger the *illusory* edge a contrarian RSI/momentum vote makes. The
+        # market price is the crowd's calibrated probability — fading it hard is
+        # only justified when the principled outcome model AGREES with our side.
+        floor = config.FADE_MARKET_PRICE_FLOOR
+        if floor > 0 and mid_price < floor:
+            fair_yes = self._model_prob_for_side(candles, yes_price, no_price, market)
+            if fair_yes is None:
+                model_side = None
+            else:
+                model_side = fair_yes if signal.direction == "YES" else 1.0 - fair_yes
+            if model_side is None or model_side < config.FADE_MARKET_MODEL_MINPROB:
+                detail = (f"model p={model_side:.2f} < {config.FADE_MARKET_MODEL_MINPROB}"
+                          if model_side is not None else "model unavailable")
+                log.info(f"  → PASS: fading a decided market — our side priced "
+                         f"{mid_price:.3f} (< {floor}) and {detail}")
+                return False
+
         # Fee-aware edge: subtract the expected taker fees from the edge.
         # If early exit is enabled we may pay fee TWICE (entry + sell), so we
         # use the conservative roundtrip cost when checking viability.

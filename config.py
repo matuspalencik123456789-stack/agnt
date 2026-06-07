@@ -118,6 +118,16 @@ EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "6"))
 # losing (its prob for our side below this) — don't panic-sell a temporary dip
 # if the model still backs our side.
 STOP_LOSS_MODEL_MAXPROB  = float(os.getenv("STOP_LOSS_MODEL_MAXPROB", "0.45"))
+# ── "Don't fade a decided market" gate ────────────────────────────────────────
+# The ensemble edge is (vote-confidence − price), which REWARDS buying cheap
+# tokens: the more certainly the book has priced our side as a loser (e.g. YES at
+# 0.085), the larger the *illusory* edge a contrarian RSI/momentum vote
+# manufactures. Below this price the crowd has effectively decided against our
+# side; only fade that when the principled outcome model backs our side with at
+# least FADE_MARKET_MODEL_MINPROB. Otherwise we'd be buying a decided loser purely
+# because it's cheap — the exact loop that burned a whole streak of trades.
+FADE_MARKET_PRICE_FLOOR   = float(os.getenv("FADE_MARKET_PRICE_FLOOR", "0.30"))
+FADE_MARKET_MODEL_MINPROB = float(os.getenv("FADE_MARKET_MODEL_MINPROB", "0.55"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
 # Minimum weight below which a strategy is excluded from ensemble voting entirely.
