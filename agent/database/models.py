@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean, DateTime, Text, JSON
 )
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import event
 import config
 
 Base = declarative_base()
@@ -88,10 +89,41 @@ class AgentLog(Base):
     data      = Column(JSON)
 
 
+# A SINGLE engine + session factory for the whole process. Previously every
+# get_session() built a fresh engine and re-ran create_all + migrations, which
+# (with a 5s roll loop + WS thread) hammered SQLite dozens of times a second and
+# risked "database is locked". Now we build once, enable WAL for concurrent
+# readers/writers, and hand out sessions from one pooled engine.
+_ENGINE = None
+_SessionFactory = None
+
+
+def _configure_sqlite(engine):
+    """WAL + a busy timeout so concurrent threads don't trip 'database is locked'."""
+    @event.listens_for(engine, "connect")
+    def _set_pragmas(dbapi_conn, _):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=30000")
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
+
+
 def get_engine():
-    import os
-    os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
-    return create_engine(f"sqlite:///{config.DB_PATH}", echo=False)
+    global _ENGINE
+    if _ENGINE is None:
+        import os
+        os.makedirs(os.path.dirname(config.DB_PATH), exist_ok=True)
+        _ENGINE = create_engine(
+            f"sqlite:///{config.DB_PATH}", echo=False,
+            connect_args={"check_same_thread": False, "timeout": 30},
+            pool_pre_ping=True,
+        )
+        _configure_sqlite(_ENGINE)
+        Base.metadata.create_all(_ENGINE)
+        _auto_migrate(_ENGINE)
+        _ensure_indexes(_ENGINE)
+    return _ENGINE
 
 
 # Columns that may be missing from older databases → auto-added on startup.
@@ -102,6 +134,24 @@ _MIGRATIONS = {
         "btc_open":     "FLOAT",
     },
 }
+
+# Indexes that speed up the hot queries (resolution sweep, per-slug position
+# management, loss-streak lookups). CREATE INDEX IF NOT EXISTS is cheap & safe.
+_INDEXES = [
+    ("ix_trades_resolved",    "trades", "resolved"),
+    ("ix_trades_closed_at",   "trades", "closed_at"),
+    ("ix_trades_market_slug", "trades", "market_slug"),
+]
+
+
+def _ensure_indexes(engine):
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        for name, table, col in _INDEXES:
+            try:
+                conn.execute(text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({col})"))
+            except Exception:
+                pass
 
 
 def _auto_migrate(engine):
@@ -121,14 +171,11 @@ def _auto_migrate(engine):
 
 
 def get_session():
-    engine = get_engine()
-    Base.metadata.create_all(engine)
-    _auto_migrate(engine)
-    Session = sessionmaker(bind=engine)
-    return Session()
+    global _SessionFactory
+    if _SessionFactory is None:
+        _SessionFactory = sessionmaker(bind=get_engine(), expire_on_commit=False)
+    return _SessionFactory()
 
 
 def init_db():
-    engine = get_engine()
-    Base.metadata.create_all(engine)
-    _auto_migrate(engine)
+    get_engine()   # builds engine, runs create_all + migrations + indexes once

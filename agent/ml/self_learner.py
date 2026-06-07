@@ -142,12 +142,19 @@ class SelfLearner:
         return row.win_rate, row.weight
 
     def record_trade_result(self, strategy: str, won: bool, roi_pct: float,
-                            signal_data: dict = None, resolution: str = None):
+                            signal_data: dict = None, resolution: str = None,
+                            is_early_exit: bool = False):
         """
         Credit-assignment learning. The agent now judges EACH contributing
         strategy by whether its own directional call matched the real outcome —
         this is the agent's "mind": it figures out which signals were actually
         right, independent of what the ensemble decided to trade.
+
+        For an EARLY EXIT the `resolution` is only a pseudo-outcome ("did the
+        short-term price move our way"), not the true window result, so we update
+        the ensemble's own track record but skip per-strategy directional credit —
+        otherwise we'd teach the strategies short-term noise instead of real
+        outcomes.
         """
         session = get_session()
         try:
@@ -156,7 +163,7 @@ class SelfLearner:
 
             # 2. Credit/blame each sub-strategy by directional correctness.
             sub = (signal_data or {}).get("sub", {})
-            if sub and resolution in ("YES", "NO"):
+            if (not is_early_exit) and sub and resolution in ("YES", "NO"):
                 for name, info in sub.items():
                     if name not in STRATEGY_NAMES:
                         continue
@@ -178,6 +185,86 @@ class SelfLearner:
             log.debug(f"record_trade_result: {e}")
         finally:
             session.close()
+
+    # ── Calibration & adaptive market anchoring ─────────────────────────────
+
+    ANCHOR_NAME = "_market_anchor"
+
+    def calibration_stats(self, limit: int = 200) -> Tuple[int, float, float]:
+        """
+        Brier score of OUR probability vs simply trusting the MARKET price, over
+        recent resolved trades. Lower Brier = better calibrated. Returns
+        (n, brier_model, brier_market). p_yes is stored in signal_data at entry;
+        the market's implied P(YES) is recovered from the entry price + side.
+        """
+        session = get_session()
+        try:
+            trades = session.query(Trade).filter(
+                Trade.resolved == True, Trade.resolution.in_(("YES", "NO")),
+                Trade.signal_data != None,
+            ).order_by(Trade.closed_at.desc()).limit(limit).all()
+        finally:
+            session.close()
+
+        n = 0
+        sse_model = sse_market = 0.0
+        for t in trades:
+            sig = t.signal_data or {}
+            p_yes = sig.get("p_yes")
+            if p_yes is None or t.price is None or t.side not in ("YES", "NO"):
+                continue
+            outcome = 1.0 if t.resolution == "YES" else 0.0
+            p_market_yes = t.price if t.side == "YES" else (1.0 - t.price)
+            sse_model  += (float(p_yes) - outcome) ** 2
+            sse_market += (float(p_market_yes) - outcome) ** 2
+            n += 1
+        if n == 0:
+            return 0, 0.0, 0.0
+        return n, sse_model / n, sse_market / n
+
+    def get_market_anchor(self) -> float:
+        """Current adaptive STAT_MARKET_WEIGHT (persisted), or the config base."""
+        base = float(getattr(config, "STAT_MARKET_WEIGHT", 0.35))
+        session = get_session()
+        try:
+            row = session.query(StrategyWeight).filter_by(name=self.ANCHOR_NAME).first()
+            return float(row.weight) if row else base
+        finally:
+            session.close()
+
+    def update_market_anchor(self) -> float:
+        """
+        Recompute the market-anchor weight from calibration: if our probability is
+        consistently WORSE than the market (higher Brier) we anchor harder to the
+        market; if we're beating it we lean on the model more. Bounded + stepped.
+        """
+        base = float(getattr(config, "STAT_MARKET_WEIGHT", 0.35))
+        n, bm, bk = self.calibration_stats()
+        anchor = self.get_market_anchor()
+        if n >= int(getattr(config, "CALIBRATION_MIN_SAMPLES", 15)):
+            step = float(getattr(config, "MARKET_ANCHOR_STEP", 0.05))
+            lo   = float(getattr(config, "MARKET_ANCHOR_MIN", 0.20))
+            hi   = float(getattr(config, "MARKET_ANCHOR_MAX", 0.70))
+            if bm > bk:        # model worse than market → trust market more
+                anchor = min(hi, anchor + step)
+            else:              # model at least as good → lean on model
+                anchor = max(lo, anchor - step)
+        else:
+            anchor = base
+        session = get_session()
+        try:
+            row = session.query(StrategyWeight).filter_by(name=self.ANCHOR_NAME).first()
+            if not row:
+                row = StrategyWeight(name=self.ANCHOR_NAME)
+                session.add(row)
+            row.weight = round(anchor, 4)
+            row.updated_at = datetime.utcnow()
+            session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+        return round(anchor, 4)
 
     # ── Meta-model (GBM edge predictor) ─────────────────────────────────────
 

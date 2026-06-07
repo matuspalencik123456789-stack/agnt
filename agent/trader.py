@@ -1,11 +1,16 @@
 """Main trading orchestrator — runs every 15 minutes."""
 import logging
+import threading
 import time
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
+from sqlalchemy import func
+
 from agent.polymarket_client import PolymarketClient
-from agent.market_data import fetch_candles, store_candles, get_current_btc_price
+from agent.market_data import (
+    fetch_candles, store_candles, get_current_btc_price, get_price_at,
+)
 from agent.strategies.outcome_model import window_open_price, analyze_trend
 from agent.market_tracker import MarketTracker
 from agent.websocket_feed import FeedManager, LIVE
@@ -54,6 +59,18 @@ class Trader:
         self._last_entry_ts: float = 0.0   # for the per-slug entry cooldown
         # pending early-exit confirmations: {trade_id: {"reason": str, "count": int}}
         self._exit_pending: Dict[int, dict] = {}
+        # One lock serialises every critical section. roll_check fires from BOTH
+        # the APScheduler threads (5s) and the Binance WS thread (on candle close),
+        # all mutating shared state (_slug_trades, _exit_pending, _last_entry_ts)
+        # and writing the same DB rows — without this they race into double entries
+        # and corrupted counters.
+        self._lock = threading.RLock()
+        # adaptive market-anchor weight for the outcome model (calibration-driven)
+        try:
+            anchor = self.learner.get_market_anchor()
+            self.ensemble.strategies["stat_outcome"].market_weight = anchor
+        except Exception:
+            pass
         # startup time — the agent observes/analyses candles during the warm-up
         # before it's allowed to place its first trade (no blind immediate entry)
         self._started_at: float = time.time()
@@ -61,8 +78,9 @@ class Trader:
         self.feeds.start(on_kline_close=self._on_kline_close)
 
     def _on_kline_close(self, candle: dict):
-        """Called by the Binance WS thread whenever a 15m candle closes."""
-        log.info(f"[ws] 15m candle closed @ {candle['close']:.0f} — re-evaluating slug.")
+        """Called by the Binance WS thread whenever a kline closes."""
+        iv = getattr(config, "WS_KLINE_INTERVAL", "1m")
+        log.info(f"[ws] {iv} candle closed @ {candle['close']:.0f} — re-evaluating slug.")
         try:
             self.roll_check()
         except Exception as e:
@@ -71,6 +89,7 @@ class Trader:
     # ── Main loop step ───────────────────────────────────────────────────────
 
     def run_cycle(self):
+      with self._lock:
         self.cycle += 1
         log.info(f"=== Cycle #{self.cycle} @ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===")
         self._log_event("cycle_start", {"cycle": self.cycle})
@@ -90,20 +109,46 @@ class Trader:
         log.info(f"BTC: ${btc_price:,.0f}  |  candles: {len(candles)}")
 
         # 3. Lock onto the current rolling 15-min BTC slug and trade it
-        balance = self.poly.get_balance() or 1000.0  # fallback for paper trading
+        balance = self._available_balance()
         self._trade_active_slug(candles, balance)
 
-        # 4. Periodically retrain the meta-model
+        # 4. Periodically retrain the meta-model + recalibrate the market anchor
         if self.cycle % 5 == 0:
             log.info("Retraining meta-model...")
             self.learner.train_meta_model()
             self.learner.update_weights_from_history()
+            try:
+                anchor = self.learner.update_market_anchor()
+                self.ensemble.strategies["stat_outcome"].market_weight = anchor
+                n, bm, bk = self.learner.calibration_stats()
+                if n:
+                    log.info(f"Calibration: n={n} Brier model={bm:.4f} "
+                             f"market={bk:.4f} → market-anchor={anchor:.2f}")
+            except Exception as e:
+                log.debug(f"calibration update: {e}")
 
         log.info(f"Cycle #{self.cycle} complete.")
+
+    # ── Balance ──────────────────────────────────────────────────────────────
+
+    def _available_balance(self) -> float:
+        """Live balance from the broker, or a virtual paper bankroll that actually
+        moves: PAPER_START_BALANCE + realised P&L of all resolved trades."""
+        if self.poly._client:
+            return self.poly.get_balance() or 0.0
+        session = get_session()
+        try:
+            realized = session.query(
+                func.coalesce(func.sum(Trade.pnl_usd), 0.0)
+            ).filter(Trade.resolved == True).scalar() or 0.0
+        finally:
+            session.close()
+        return round(config.PAPER_START_BALANCE + float(realized), 2)
 
     # ── Rolling slug handling ────────────────────────────────────────────────
 
     def roll_check(self):
+      with self._lock:
         """
         Fast hand-off check (runs every ROLL_CHECK_SECONDS). The moment the
         active 15-min slug ends, this locks onto the next one and trades it
@@ -127,7 +172,7 @@ class Trader:
             return
         # Manage existing positions first — maybe close one early.
         self.manage_open_positions(market, candles)
-        balance = self.poly.get_balance() or 1000.0
+        balance = self._available_balance()
         self._trade_active_slug(candles, balance, prefetched=market)
 
     def _trade_active_slug(self, candles, balance: float, prefetched: Dict = None):
@@ -547,6 +592,7 @@ class Trader:
             self.learner.record_trade_result(
                 trade.strategy_used or "ensemble", won, roi,
                 signal_data=trade.signal_data, resolution=trade.resolution,
+                is_early_exit=True,
             )
         except Exception as e:
             log.debug(f"learner.record (early exit): {e}")
@@ -567,13 +613,14 @@ class Trader:
             return None
 
     def check_resolutions(self):
-        """
-        Two-pass resolver:
-        1. Ask Polymarket API for official YES/NO (works for live trades).
-        2. Paper-mode local resolution: once the window endDate has passed,
-           fetch the current BTC price. If price > btc_open → YES won, else NO won.
-           This gives immediate feedback without waiting for Polymarket to settle.
-        """
+      """
+      Two-pass resolver:
+      1. Ask Polymarket API for official YES/NO (works for live trades).
+      2. Paper-mode local resolution: once the window endDate has passed, resolve
+         against the price at window end. If price > btc_open → YES won, else NO.
+         This gives immediate feedback without waiting for Polymarket to settle.
+      """
+      with self._lock:
         session = get_session()
         try:
             open_trades = session.query(Trade).filter(Trade.resolved == False).all()
@@ -596,15 +643,23 @@ class Trader:
                 if not resolution and trade.window_end and trade.btc_open:
                     w_end_aware = trade.window_end.replace(tzinfo=timezone.utc)
                     grace = 30  # seconds after end to allow price to settle
-                    if (now_utc - w_end_aware).total_seconds() >= grace:
-                        btc_now = get_current_btc_price()
-                        if btc_now and trade.btc_open:
+                    elapsed = (now_utc - w_end_aware).total_seconds()
+                    if elapsed >= grace:
+                        # Resolve against the price AT window end (not 'now'). If we
+                        # resolve promptly the current price ≈ end price; if late
+                        # (restart/busy) the historical kline keeps it correct.
+                        btc_close = 0.0
+                        if elapsed > 120:
+                            btc_close = get_price_at(w_end_aware)
+                        if not btc_close:
+                            btc_close = get_current_btc_price()
+                        if btc_close and trade.btc_open:
                             # YES = price ended strictly ABOVE window open.
                             # A flat tie counts as NO ("did not go up").
-                            resolution = "YES" if btc_now > trade.btc_open else "NO"
+                            resolution = "YES" if btc_close > trade.btc_open else "NO"
                             log.info(
                                 f"  [paper resolve] trade {trade.id}: "
-                                f"BTC {trade.btc_open:.0f} → {btc_now:.0f}  → {resolution}"
+                                f"BTC {trade.btc_open:.0f} → {btc_close:.0f}  → {resolution}"
                             )
 
                 if not resolution:

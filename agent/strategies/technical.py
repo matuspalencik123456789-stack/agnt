@@ -297,6 +297,11 @@ class StatOutcomeStrategy(BaseStrategy):
     """
     name = "stat_outcome"
 
+    def __init__(self):
+        # Adaptive market-anchor weight, updated from calibration by the trader.
+        # Starts at the config base; the SelfLearner nudges it as evidence builds.
+        self.market_weight = float(getattr(config, "STAT_MARKET_WEIGHT", 0.35))
+
     def generate_signal(self, candles, yes_price, no_price, market_meta):
         if len(candles) < 20:
             return self._pass({"reason": "not enough candles"})
@@ -338,7 +343,8 @@ class StatOutcomeStrategy(BaseStrategy):
         # Treat the market price as an informative prior (it aggregates many
         # traders). Blend the model toward it so we don't fight the market with
         # full conviction — professional Bayesian anchoring.
-        mw = float(getattr(config, "STAT_MARKET_WEIGHT", 0.35))
+        mw = float(getattr(self, "market_weight",
+                            getattr(config, "STAT_MARKET_WEIGHT", 0.35)))
         if 0.0 < yes_price < 1.0:
             p_yes = (1.0 - mw) * p_yes + mw * yes_price
         p_no  = 1.0 - p_yes

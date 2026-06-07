@@ -15,6 +15,10 @@ GAMMA_API  = "https://gamma-api.polymarket.com"
 # ── Trading ──────────────────────────────────────────────────────────────────
 TRADING_INTERVAL_MINUTES = 15
 MAX_POSITION_SIZE_USD    = float(os.getenv("MAX_POSITION_SIZE_USD", "5"))   # max $5 per trade
+# Starting virtual bankroll for PAPER mode. Real P&L is added to this so sizing,
+# the daily-loss limit and the dashboard reflect a balance that actually
+# compounds/depletes instead of being frozen at a constant.
+PAPER_START_BALANCE      = float(os.getenv("PAPER_START_BALANCE", "1000"))
 # Global cap on simultaneously-open positions. Set high: per-window exposure is
 # already bounded by MAX_TRADES_PER_SLUG, and positions auto-resolve each window.
 MAX_CONCURRENT_POSITIONS = int(os.getenv("MAX_CONCURRENT_POSITIONS", "100"))
@@ -150,6 +154,16 @@ STRATEGY_MAX_WEIGHT      = float(os.getenv("STRATEGY_MAX_WEIGHT", "4.0"))
 LEARNING_RATE         = float(os.getenv("LEARNING_RATE", "0.08"))
 MIN_TRADES_TO_LEARN   = int(os.getenv("MIN_TRADES_TO_LEARN", "8"))
 STRATEGY_DECAY        = float(os.getenv("STRATEGY_DECAY", "0.99"))  # older trades matter less
+
+# ── Calibration / adaptive market anchoring ───────────────────────────────────
+# The agent tracks how well-calibrated its probability is (Brier score) vs simply
+# trusting the market price. If the model is consistently WORSE than the market it
+# anchors harder to the market (raises the effective STAT_MARKET_WEIGHT); if it's
+# beating the market it leans on itself more. Bounds + step keep it stable.
+CALIBRATION_MIN_SAMPLES = int(os.getenv("CALIBRATION_MIN_SAMPLES", "15"))
+MARKET_ANCHOR_MIN       = float(os.getenv("MARKET_ANCHOR_MIN", "0.20"))
+MARKET_ANCHOR_MAX       = float(os.getenv("MARKET_ANCHOR_MAX", "0.70"))
+MARKET_ANCHOR_STEP      = float(os.getenv("MARKET_ANCHOR_STEP", "0.05"))
 
 # ── Data ─────────────────────────────────────────────────────────────────────
 DB_PATH      = os.getenv("DB_PATH", "data/trading.db")

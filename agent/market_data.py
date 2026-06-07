@@ -99,6 +99,33 @@ def store_candles(df: pd.DataFrame):
         session.close()
 
 
+def get_price_at(dt) -> float:
+    """
+    BTC close price AROUND a past timestamp `dt` (UTC), from the 1-minute kline
+    covering it. Used to resolve a paper trade against the price AT the window's
+    end rather than 'now' — important when resolution runs late (after a restart
+    or a busy period). Returns 0.0 if unavailable.
+    """
+    try:
+        import pandas as _pd
+        ts = _pd.Timestamp(dt).tz_localize(None) if _pd.Timestamp(dt).tzinfo is None \
+            else _pd.Timestamp(dt).tz_convert("UTC").tz_localize(None)
+        start_ms = int(ts.timestamp() * 1000)
+        resp = requests.get(
+            BINANCE_KLINES,
+            params={"symbol": "BTCUSDT", "interval": "1m",
+                    "startTime": start_ms, "limit": 1},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        if raw:
+            return float(raw[0][4])   # close of the covering 1m candle
+    except Exception as e:
+        log.debug(f"get_price_at error: {e}")
+    return 0.0
+
+
 def get_current_btc_price() -> float:
     # 1. Prefer the live WebSocket price (sub-second freshness)
     try:

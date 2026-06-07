@@ -32,6 +32,7 @@ import requests
 
 import config
 from agent.strategies.ensemble import EnsembleStrategy, DEFAULT_WEIGHTS
+from agent.strategies.outcome_model import prob_up, realized_vol_per_step
 
 logging.basicConfig(level=logging.WARNING)
 log = logging.getLogger("backtest")
@@ -94,12 +95,29 @@ def evaluate_window(df, ens, w, decide_min, spread):
         "endDate":   w_close.isoformat(),
         "strike_price": 0.0,
     }
-    yes_mid = no_mid = 0.5                     # at the open the market is ~coin-flip
+
+    # ── Realistic market price at decision time ───────────────────────────────
+    # The old backtest froze the market at 0.50, which (with honest edge =
+    # fair − price) over-stated edge and over-traded vs live. Instead we model an
+    # EFFICIENT market: it prices the pure random-walk digital option given how
+    # far spot has moved from the window open with `remaining` seconds left. The
+    # agent's edge must then come from its mean-reversion + technical read
+    # DIVERGING from that efficient baseline — the same bar it faces live.
+    current   = float(hist["close"].iloc[-1])
+    remaining = max((15 - decide_min) * 60.0, 1.0)
+    vol       = realized_vol_per_step(hist["close"])
+    ref_up = prob_up(current, open_px, remaining, step_seconds=60.0,
+                     vol_per_step=vol, drift_step=0.0, mean_rev=0.0, max_conf=0.97)
+    if ref_up is None:
+        ref_up = 0.5
+    yes_mid, no_mid = ref_up, 1.0 - ref_up
+
     sig = ens.generate_signal(hist, yes_mid, no_mid, meta)
     if sig.direction == "PASS":
         return None
 
-    fill   = 0.5 + spread / 2.0               # pay the ask
+    mkt_price = yes_mid if sig.direction == "YES" else no_mid
+    fill   = min(0.99, mkt_price + spread / 2.0)    # pay the ask on OUR side
     shares = config.MAX_POSITION_SIZE_USD / fill
     resolution = "YES" if close_px > open_px else "NO"
     won = (sig.direction == resolution)
@@ -112,7 +130,7 @@ def evaluate_window(df, ens, w, decide_min, spread):
 
     return {
         "time": w_open, "dir": sig.direction, "res": resolution, "won": won,
-        "conf": sig.confidence, "edge": sig.edge, "fee": entry_fee,
+        "conf": sig.confidence, "edge": sig.edge, "fee": entry_fee, "fill": fill,
         "pnl": pnl, "roi": roi, "sub": (sig.details or {}).get("sub", {}),
     }
 
@@ -160,10 +178,11 @@ def summarise(title, trades, spread):
     # equity curve & max drawdown
     eq = t["pnl"].cumsum()
     dd = (eq - eq.cummax()).min()
-    # fee-aware breakeven win rate: at fill≈0.51, fee≈1.8% → need a bit over 51%
-    fill = 0.5 + spread / 2.0
+    # fee-aware breakeven win rate, using the ACTUAL fills paid (prices now vary
+    # with the modelled market, not a fixed 0.51).
+    avg_fill = float(t["fill"].mean()) if "fill" in t else (0.5 + spread / 2.0)
     avg_fee_frac = fees / (config.MAX_POSITION_SIZE_USD * n)
-    breakeven = fill + avg_fee_frac
+    breakeven = avg_fill + avg_fee_frac
 
     print(f"\n=== {title} ===")
     print(f"Windows traded : {n}")
