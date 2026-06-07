@@ -245,7 +245,24 @@ class Trader:
         mid_price = yes_price if signal.direction == "YES" else no_price
         token_id  = _token_for_side(market, signal.direction)
         price     = self.poly.get_buy_price(token_id, mid_price)
-        eff_edge  = max(0.0, blended_conf - price)
+
+        # Dead-zone: skip fills hugging 0.50 — max fee, max coin-flip.
+        dz = config.PRICE_DEADZONE_HALF
+        if dz > 0 and abs(price - 0.5) < dz:
+            log.info(f"  → PASS: fill {price:.3f} in dead-zone "
+                     f"(0.50 ± {dz}) — max fee, near coin-flip")
+            return False
+
+        # Fee-aware edge: subtract the per-share taker fee we'll actually pay and
+        # demand a margin on top. An edge that doesn't beat the fee is a loser.
+        fee_per_share = config.taker_fee(1.0, price)   # $ fee per 1 share at fill
+        eff_edge  = max(0.0, blended_conf - price - fee_per_share)
+        if blended_conf - price - fee_per_share < config.FEE_EDGE_MARGIN:
+            log.info(f"  → PASS: edge after fee "
+                     f"{blended_conf - price - fee_per_share:+.4f} "
+                     f"< margin {config.FEE_EDGE_MARGIN} "
+                     f"(conf={blended_conf:.3f} fill={price:.3f} fee={fee_per_share:.4f})")
+            return False
 
         # ── "Is it worth trading right now?" — selectivity gate ───────────────
         # The agent doesn't blow all its slots on the first qualifying signals.

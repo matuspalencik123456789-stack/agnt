@@ -12,6 +12,7 @@ class RiskManager:
     def __init__(self):
         self.daily_pnl_cache: float = 0.0
         self.last_cache_update: datetime = datetime.utcnow() - timedelta(hours=1)
+        self._breaker_until: datetime | None = None   # paused-until timestamp
 
     def get_daily_pnl(self) -> float:
         if (datetime.utcnow() - self.last_cache_update).seconds < 60:
@@ -33,6 +34,35 @@ class RiskManager:
         pnl = self.get_daily_pnl()
         if pnl < -config.MAX_DAILY_LOSS_USD:
             log.warning(f"Daily loss limit breached: {pnl:.2f} USD")
+            return True
+        return False
+
+    def is_circuit_broken(self) -> bool:
+        """
+        Trip after MAX_CONSECUTIVE_LOSSES losing trades in a row, then stay
+        paused for CIRCUIT_BREAKER_COOLDOWN seconds. Protects capital during a
+        bad streak (regime change, broken signal) instead of bleeding through it.
+        """
+        limit = getattr(config, "MAX_CONSECUTIVE_LOSSES", 0)
+        if limit <= 0:
+            return False
+        # still inside an active pause?
+        if self._breaker_until and datetime.utcnow() < self._breaker_until:
+            return True
+        session = get_session()
+        try:
+            recent = session.query(Trade).filter(
+                Trade.resolved == True, Trade.pnl_usd != None
+            ).order_by(Trade.closed_at.desc()).limit(limit).all()
+        finally:
+            session.close()
+        if len(recent) < limit:
+            return False
+        if all((t.pnl_usd or 0) < 0 for t in recent):
+            cooldown = getattr(config, "CIRCUIT_BREAKER_COOLDOWN", 900)
+            self._breaker_until = datetime.utcnow() + timedelta(seconds=cooldown)
+            log.warning(f"Circuit breaker TRIPPED: {limit} losses in a row — "
+                        f"pausing entries for {cooldown}s.")
             return True
         return False
 
@@ -80,6 +110,8 @@ class RiskManager:
     def can_trade(self, size_usd: float, balance: float) -> tuple[bool, str]:
         if self.is_daily_limit_breached():
             return False, "daily_loss_limit"
+        if self.is_circuit_broken():
+            return False, "circuit_breaker (loss streak)"
         if self.count_open_positions() >= config.MAX_CONCURRENT_POSITIONS:
             return False, "max_positions"
         if size_usd > balance * 0.30:

@@ -29,6 +29,22 @@ PRICE_ACTION_MIN_SCORE   = float(os.getenv("PRICE_ACTION_MIN_SCORE", "0.35"))
 # Higher = trust the market more, fight it less. Reduces overconfident bets.
 STAT_MARKET_WEIGHT       = float(os.getenv("STAT_MARKET_WEIGHT", "0.35"))
 
+# ── Fee-aware entry & dead-zone ───────────────────────────────────────────────
+# A trade is only worth it if the edge clears the price AND the taker fee with a
+# margin to spare. Crypto fee at 0.50 is ~1.8% — an edge under that is a
+# guaranteed loser. We subtract the per-share fee from the edge and require this
+# extra buffer on top before entering.
+FEE_EDGE_MARGIN          = float(os.getenv("FEE_EDGE_MARGIN", "0.005"))
+# Skip entries whose fill price sits in this dead-zone around 0.50 (half-width):
+# that's exactly where the fee is highest and the outcome most coin-flip. 0 = off.
+PRICE_DEADZONE_HALF      = float(os.getenv("PRICE_DEADZONE_HALF", "0.02"))
+
+# ── Risk circuit-breaker ──────────────────────────────────────────────────────
+# Pause new entries after this many consecutive losing trades (0 = disabled).
+MAX_CONSECUTIVE_LOSSES   = int(os.getenv("MAX_CONSECUTIVE_LOSSES", "5"))
+# How long (seconds) to stay paused once the breaker trips.
+CIRCUIT_BREAKER_COOLDOWN = int(os.getenv("CIRCUIT_BREAKER_COOLDOWN", "900"))
+
 # ── Trade selectivity ("should I bother trading right now?") ──────────────────
 # Minimum quality score (confidence × edge) for the FIRST entry on a slug.
 ENTRY_QUALITY_MIN        = float(os.getenv("ENTRY_QUALITY_MIN", "0.012"))
