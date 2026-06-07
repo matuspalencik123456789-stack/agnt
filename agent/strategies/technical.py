@@ -317,7 +317,18 @@ class StatOutcomeStrategy(BaseStrategy):
 
         vol   = realized_vol_per_step(candles["close"])
         drift = drift_per_step(candles["close"])
-        p_up  = prob_up(current, strike, secs_left, step_seconds, vol, drift)
+
+        # Time-aware confidence cap: humble at the open (~coin-flip), confident
+        # near expiry (the move is nearly decided). Linearly widen the cap as the
+        # window elapses so the model keeps resolution instead of flat-lining.
+        window = float(getattr(config, "TRADING_INTERVAL_MINUTES", 15)) * 60.0
+        frac_elapsed = max(0.0, min(1.0, 1.0 - secs_left / window)) if window else 0.5
+        cap_base = float(getattr(config, "MODEL_CONF_CAP_BASE", 0.70))
+        cap_max  = float(getattr(config, "MODEL_CONF_CAP_MAX", 0.97))
+        max_conf = cap_base + (cap_max - cap_base) * frac_elapsed
+
+        p_up  = prob_up(current, strike, secs_left, step_seconds, vol, drift,
+                        max_conf=max_conf)
         if p_up is None:
             return self._pass({"reason": "model n/a"})
 

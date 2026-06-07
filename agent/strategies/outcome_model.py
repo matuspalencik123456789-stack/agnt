@@ -120,14 +120,20 @@ def analyze_trend(closes: pd.Series, lookback: int = 30,
 def prob_up(current: float, strike: float, seconds_remaining: float,
             step_seconds: float, vol_per_step: float,
             drift_step: float = 0.0,
-            mean_rev: float = 0.45) -> Optional[float]:
+            mean_rev: float = 0.45,
+            max_conf: float = 0.80) -> Optional[float]:
     """
     Probability that the final price exceeds `strike`.
 
     Uses a lightly mean-reverting random walk: short-horizon crypto prices show
     partial mean reversion, so an already-moved log-price is pulled back toward
     zero by factor `mean_rev` before computing the remaining diffusion.
-    Result is capped to [0.10, 0.90] — extreme certainty is never warranted.
+
+    The result is capped to [1-max_conf, max_conf]. `max_conf` should be made
+    TIME-AWARE by the caller: near the window open a 15-min outcome is close to
+    a coin-flip (cap tight, e.g. 0.70) so we stay humble; near expiry an
+    already-large move is almost decided (cap wide, e.g. 0.97) so the model
+    keeps its resolution instead of flat-lining at a fixed floor/ceiling.
     """
     if current <= 0 or strike <= 0 or vol_per_step <= 0:
         return None
@@ -150,6 +156,6 @@ def prob_up(current: float, strike: float, seconds_remaining: float,
     z = (adjusted_moved + mu_rem) / sigma_rem
     raw = _norm_cdf(z)
 
-    # Cap to [0.20, 0.80] — claiming >80% certainty on a ~coin-flip 15-min
-    # window is hubris and drives overconfident, money-losing streaks.
-    return max(0.20, min(0.80, raw))
+    # Time-aware cap: humble early, confident near expiry (set by caller).
+    hi = max(0.5, min(0.999, max_conf))
+    return max(1.0 - hi, min(hi, raw))

@@ -28,6 +28,12 @@ PRICE_ACTION_MIN_SCORE   = float(os.getenv("PRICE_ACTION_MIN_SCORE", "0.35"))
 # How much the outcome model anchors to the market price as a prior (0..1).
 # Higher = trust the market more, fight it less. Reduces overconfident bets.
 STAT_MARKET_WEIGHT       = float(os.getenv("STAT_MARKET_WEIGHT", "0.35"))
+# Time-aware confidence cap for the outcome model. At the window OPEN the cap is
+# CAP_BASE (humble — a 15-min move is ~coin-flip); by EXPIRY it widens to
+# CAP_MAX (an already-large move is nearly decided). This stops P(up) from
+# flat-lining at a fixed 0.20/0.80 floor and restores the model's resolution.
+MODEL_CONF_CAP_BASE      = float(os.getenv("MODEL_CONF_CAP_BASE", "0.70"))
+MODEL_CONF_CAP_MAX       = float(os.getenv("MODEL_CONF_CAP_MAX", "0.97"))
 
 # ── Fee-aware entry & dead-zone ───────────────────────────────────────────────
 # A trade is only worth it if the edge clears the price AND the taker fee with a
