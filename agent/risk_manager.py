@@ -13,6 +13,11 @@ class RiskManager:
         self.daily_pnl_cache: float = 0.0
         self.last_cache_update: datetime = datetime.utcnow() - timedelta(hours=1)
         self._breaker_until: datetime | None = None   # paused-until timestamp
+        # Only trades closed AFTER this moment count toward the loss streak.
+        # Initialised to startup so stale pre-restart losses can't deadlock the
+        # breaker, and advanced each time the breaker trips so the same streak
+        # isn't punished twice once the cooldown expires.
+        self._streak_after: datetime = datetime.utcnow()
 
     def get_daily_pnl(self) -> float:
         if (datetime.utcnow() - self.last_cache_update).seconds < 60:
@@ -49,10 +54,18 @@ class RiskManager:
         # still inside an active pause?
         if self._breaker_until and datetime.utcnow() < self._breaker_until:
             return True
+        # Cooldown just expired → give the agent a fresh start: only losses from
+        # NOW on count toward a new streak (don't re-trip on the old one).
+        if self._breaker_until and datetime.utcnow() >= self._breaker_until:
+            self._breaker_until = None
+            self._streak_after = datetime.utcnow()
+            log.info("Circuit breaker cooldown expired — resuming, streak reset.")
+            return False
         session = get_session()
         try:
             recent = session.query(Trade).filter(
-                Trade.resolved == True, Trade.pnl_usd != None
+                Trade.resolved == True, Trade.pnl_usd != None,
+                Trade.closed_at >= self._streak_after,
             ).order_by(Trade.closed_at.desc()).limit(limit).all()
         finally:
             session.close()
