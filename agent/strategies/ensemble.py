@@ -61,10 +61,14 @@ class EnsembleStrategy:
         no_score  = 0.0
         total_w   = 0.0
 
+        min_w = float(getattr(config, "STRATEGY_MIN_WEIGHT", 0.40))
         for sig in signals:
             if sig.direction == "PASS":
                 continue
             w = self.weights.get(sig.strategy, 1.0)
+            if w < min_w:
+                log.debug(f"    [{sig.strategy}] excluded (weight {w:.3f} < {min_w:.2f})")
+                continue
             score = w * sig.confidence * max(sig.edge, 0.01)
             if sig.direction == "YES":
                 yes_score += score
@@ -85,8 +89,12 @@ class EnsembleStrategy:
             raw_conf  = no_score / (yes_score + no_score)
             price     = no_price
 
+        excluded = [s.strategy for s in signals
+                    if s.direction != "PASS"
+                    and self.weights.get(s.strategy, 1.0) < min_w]
+        excl_str = f" excl={excluded}" if excluded else ""
         log.info(f"  Ensemble: YES={yes_score:.4f} NO={no_score:.4f} "
-                 f"→ {direction} conf={raw_conf:.3f} price={price:.3f}")
+                 f"→ {direction} conf={raw_conf:.3f} price={price:.3f}{excl_str}")
 
         # require meaningful consensus (≥ 0.55)
         if raw_conf < 0.55:

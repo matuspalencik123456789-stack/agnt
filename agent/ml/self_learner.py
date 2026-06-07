@@ -95,7 +95,8 @@ class SelfLearner:
                 win_rate = stats["wins"] / stats["total"]
                 avg_roi  = stats["total_roi"] / stats["total"]
                 # weight emphasises directional accuracy vs a coin-flip baseline
-                new_weight = max(0.1, min(3.0, (win_rate / 0.5) * (1 + avg_roi / 200)))
+                max_w = float(getattr(config, "STRATEGY_MAX_WEIGHT", 4.0))
+                new_weight = max(0.1, min(max_w, (win_rate / 0.5) * (1 + avg_roi / 200)))
 
                 row = session.query(StrategyWeight).filter_by(name=name).first()
                 if not row:
@@ -127,7 +128,8 @@ class SelfLearner:
         row.win_rate  = round((row.win_rate or 0.5) * (1 - lr) + int(correct) * lr, 4)
         row.avg_roi   = round((row.avg_roi  or 0.0) * (1 - lr) + roi_pct      * lr, 4)
         # weight emphasises *directional accuracy*: above 0.5 win-rate → >1, below → <1
-        row.weight    = round(max(0.1, min(3.0,
+        max_w = float(getattr(config, "STRATEGY_MAX_WEIGHT", 4.0))
+        row.weight    = round(max(0.1, min(max_w,
                             (row.win_rate / 0.5) * (1 + row.avg_roi / 200))), 4)
         row.trade_cnt = n
         row.updated_at = datetime.utcnow()

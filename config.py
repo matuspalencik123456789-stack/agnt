@@ -77,6 +77,12 @@ EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "3"))
 STOP_LOSS_MODEL_MAXPROB  = float(os.getenv("STOP_LOSS_MODEL_MAXPROB", "0.45"))
 MAX_DAILY_LOSS_USD       = float(os.getenv("MAX_DAILY_LOSS_USD", "200"))
 KELLY_FRACTION           = float(os.getenv("KELLY_FRACTION", "0.25"))       # quarter Kelly
+# Minimum weight below which a strategy is excluded from ensemble voting entirely.
+# Strategies that fall below this are clearly harmful — silence them rather than
+# letting them drag the ensemble in the wrong direction.
+STRATEGY_MIN_WEIGHT      = float(os.getenv("STRATEGY_MIN_WEIGHT", "0.40"))
+# Maximum weight a single strategy can reach (raises the ceiling for top performers).
+STRATEGY_MAX_WEIGHT      = float(os.getenv("STRATEGY_MAX_WEIGHT", "4.0"))
 
 # ── Self-learning ────────────────────────────────────────────────────────────
 LEARNING_RATE         = float(os.getenv("LEARNING_RATE", "0.08"))
