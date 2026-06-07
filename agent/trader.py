@@ -219,6 +219,25 @@ class Trader:
             log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
             return False
 
+        # ── Principled-model veto ─────────────────────────────────────────────
+        # The digital-option model (stat_outcome) is the only signal that actually
+        # models the thing being predicted (will price end above the window open).
+        # The 6 technical indicators are built for trending spot markets and on a
+        # flat 15-min binary are largely noise — and because the ensemble combines
+        # by vote-share, they routinely OUTVOTE the principled model and even bet
+        # the OPPOSITE side. Live logs: every trade where stat_outcome agreed won;
+        # every trade where it PASSed or disagreed lost. So give it a veto: only
+        # enter when the outcome model is non-PASS AND points the SAME way.
+        if config.REQUIRE_STAT_AGREEMENT:
+            stat = self._stat_signal(candles, yes_price, no_price, market)
+            if stat is None or stat.direction == "PASS" or stat.direction != signal.direction:
+                sd = stat.direction if stat is not None else "n/a"
+                reason = stat.details.get("reason", "") if stat is not None else "model n/a"
+                log.info(f"  → PASS: outcome model does not back {signal.direction} "
+                         f"(model says {sd}{f' — {reason}' if reason else ''}) — "
+                         f"technical-only signal, skipping")
+                return False
+
         # Determine the recent price development and block clearly counter-trend
         # bets (YES = expecting UP, NO = expecting DOWN on these up/down markets).
         # Only block when the trend is GENUINELY STRONG — a micro-slope (e.g.
@@ -484,16 +503,20 @@ class Trader:
         finally:
             session.close()
 
-    def _model_prob_for_side(self, candles, yes_mid, no_mid, market) -> Optional[float]:
-        """The statistical model's probability that YES wins (fair_yes), or None."""
+    def _stat_signal(self, candles, yes_mid, no_mid, market):
+        """The raw digital-option model Signal (direction YES/NO/PASS), or None."""
         try:
             strat = self.ensemble.strategies.get("stat_outcome")
             if not strat:
                 return None
-            sig = strat.generate_signal(candles, yes_mid, no_mid, market)
-            return sig.details.get("fair_yes")
+            return strat.generate_signal(candles, yes_mid, no_mid, market)
         except Exception:
             return None
+
+    def _model_prob_for_side(self, candles, yes_mid, no_mid, market) -> Optional[float]:
+        """The statistical model's probability that YES wins (fair_yes), or None."""
+        sig = self._stat_signal(candles, yes_mid, no_mid, market)
+        return sig.details.get("fair_yes") if sig is not None else None
 
     def _close_position_early(self, session, trade, sell_price: float, reason: str):
         """Sell a position before the window resolves; record realised P&L.
