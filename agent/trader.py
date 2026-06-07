@@ -246,22 +246,32 @@ class Trader:
         token_id  = _token_for_side(market, signal.direction)
         price     = self.poly.get_buy_price(token_id, mid_price)
 
-        # Dead-zone: skip fills hugging 0.50 — max fee, max coin-flip.
+        # Dead-zone: check against BOTH mid and fill. The mid is the truer signal
+        # of "this is a coin-flip market" — the ask is always slightly above mid
+        # so checking only the ask lets near-0.50 mids slip through.
         dz = config.PRICE_DEADZONE_HALF
-        if dz > 0 and abs(price - 0.5) < dz:
-            log.info(f"  → PASS: fill {price:.3f} in dead-zone "
+        if dz > 0 and (abs(mid_price - 0.5) < dz or abs(price - 0.5) < dz):
+            log.info(f"  → PASS: mid {mid_price:.3f} / fill {price:.3f} in dead-zone "
                      f"(0.50 ± {dz}) — max fee, near coin-flip")
             return False
 
-        # Fee-aware edge: subtract the per-share taker fee we'll actually pay and
-        # demand a margin on top. An edge that doesn't beat the fee is a loser.
-        fee_per_share = config.taker_fee(1.0, price)   # $ fee per 1 share at fill
-        eff_edge  = max(0.0, blended_conf - price - fee_per_share)
-        if blended_conf - price - fee_per_share < config.FEE_EDGE_MARGIN:
-            log.info(f"  → PASS: edge after fee "
-                     f"{blended_conf - price - fee_per_share:+.4f} "
+        # Fee-aware edge: subtract the expected taker fees from the edge.
+        # If early exit is enabled we may pay fee TWICE (entry + sell), so we
+        # use the conservative roundtrip cost when checking viability.
+        entry_fee = config.taker_fee(1.0, price)
+        if config.ENABLE_EARLY_EXIT:
+            # Estimate exit fee at roughly the same price (conservative).
+            expected_fees = entry_fee + config.taker_fee(1.0, price)
+        else:
+            expected_fees = entry_fee
+
+        net_edge = blended_conf - price - expected_fees
+        eff_edge = max(0.0, net_edge)
+        if net_edge < config.FEE_EDGE_MARGIN:
+            log.info(f"  → PASS: edge after fees {net_edge:+.4f} "
                      f"< margin {config.FEE_EDGE_MARGIN} "
-                     f"(conf={blended_conf:.3f} fill={price:.3f} fee={fee_per_share:.4f})")
+                     f"(conf={blended_conf:.3f} fill={price:.3f} "
+                     f"fees={expected_fees:.4f} early_exit={config.ENABLE_EARLY_EXIT})")
             return False
 
         # ── "Is it worth trading right now?" — selectivity gate ───────────────

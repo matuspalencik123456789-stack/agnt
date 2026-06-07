@@ -19,7 +19,7 @@ MAX_POSITION_SIZE_USD    = float(os.getenv("MAX_POSITION_SIZE_USD", "5"))   # ma
 # already bounded by MAX_TRADES_PER_SLUG, and positions auto-resolve each window.
 MAX_CONCURRENT_POSITIONS = int(os.getenv("MAX_CONCURRENT_POSITIONS", "100"))
 MAX_TRADES_PER_SLUG      = int(os.getenv("MAX_TRADES_PER_SLUG", "3"))   # cap entries per 15-min slug
-MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.01"))   # 1% min edge (was 4%)
+MIN_EDGE_THRESHOLD       = float(os.getenv("MIN_EDGE_THRESHOLD", "0.03"))   # 3% min edge — must clear crypto fee (~1.8%) + margin
 # Minimum directional conviction (|P(up)-0.5|) for the outcome model to act.
 STAT_MIN_CONVICTION      = float(os.getenv("STAT_MIN_CONVICTION", "0.06"))
 STAT_MIN_MISPRICING      = float(os.getenv("STAT_MIN_MISPRICING", "0.03"))
@@ -95,7 +95,7 @@ def taker_fee(shares: float, price: float) -> float:
 # or cut a loss when the market/model moves unexpectedly against it.
 ENABLE_EARLY_EXIT        = os.getenv("ENABLE_EARLY_EXIT", "true").lower() == "true"
 # Sell to take profit once the held token's bid reaches this price.
-TAKE_PROFIT_PRICE        = float(os.getenv("TAKE_PROFIT_PRICE", "0.90"))
+TAKE_PROFIT_PRICE        = float(os.getenv("TAKE_PROFIT_PRICE", "0.95"))
 # Sell to cut the loss once the held token's bid falls to this price.
 STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.25"))
 # Also exit if the model now favours the OPPOSITE side with at least this prob.
