@@ -483,6 +483,15 @@ class Trader:
         log.info(f"  🚪 EARLY EXIT trade {trade.id}: SOLD {trade.side} @ {sell_price:.3f} "
                  f"({reason}) → {emoji} PnL=${pnl:+.4f} ROI={roi:+.1f}%")
 
+        # Free up the slug slot so the agent can re-enter if the market shifts.
+        # Decrement the per-slug counter (floor 0) and reset the cooldown so
+        # the re-entry bar drops back down — the closed trade no longer occupies
+        # a slot, and a fresh setup on the same slug is evaluated from scratch.
+        self._slug_trades = max(0, self._slug_trades - 1)
+        self._last_entry_ts = 0.0
+        log.info(f"  [slot freed] slug_trades={self._slug_trades} — "
+                 f"ready to re-evaluate for a new entry")
+
         try:
             self.learner.record_trade_result(
                 trade.strategy_used or "ensemble", won, roi,
