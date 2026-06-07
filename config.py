@@ -110,10 +110,10 @@ TAKE_PROFIT_PRICE        = float(os.getenv("TAKE_PROFIT_PRICE", "0.95"))
 STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.25"))
 # Also exit if the model now favours the OPPOSITE side with at least this prob.
 EXIT_ON_REVERSAL         = os.getenv("EXIT_ON_REVERSAL", "true").lower() == "true"
-MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.62"))
+MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.68"))
 # Don't sell on a single price touch — the exit condition must hold for this
 # many consecutive roll-checks before we actually close (filters out noise).
-EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "3"))
+EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "6"))
 # For a stop-loss, also require the MODEL to agree the position is now likely
 # losing (its prob for our side below this) — don't panic-sell a temporary dip
 # if the model still backs our side.
