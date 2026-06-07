@@ -62,6 +62,10 @@ WARMUP_SECONDS           = int(os.getenv("WARMUP_SECONDS", "90"))
 TREND_LOOKBACK           = int(os.getenv("TREND_LOOKBACK", "30"))
 # Minimum |normalised slope| for the trend to count as a real direction (not flat).
 TREND_MIN_STRENGTH       = float(os.getenv("TREND_MIN_STRENGTH", "0.00002"))
+# Counter-trend bets are only VETOED when the trend is this strong. A barely-
+# sloped (near-flat) tape — e.g. strength 0.00009 — is noise and must not block
+# an otherwise strong signal. Set well above the typical micro-slopes seen live.
+TREND_BLOCK_MIN_STRENGTH = float(os.getenv("TREND_BLOCK_MIN_STRENGTH", "0.00025"))
 # Require the trade's side to agree with the detected trend (block counter-trend).
 REQUIRE_TREND_AGREEMENT  = os.getenv("REQUIRE_TREND_AGREEMENT", "true").lower() == "true"
 

@@ -221,16 +221,21 @@ class Trader:
 
         # Determine the recent price development and block clearly counter-trend
         # bets (YES = expecting UP, NO = expecting DOWN on these up/down markets).
+        # Only block when the trend is GENUINELY STRONG — a micro-slope (e.g.
+        # 0.00009 on a flat tape) is noise and must not veto a strong signal.
         trend = analyze_trend(candles["close"], config.TREND_LOOKBACK,
                               config.TREND_MIN_STRENGTH)
         log.info(f"  Trend: {trend['direction']} (slope={trend['slope']:.5f} "
                  f"strength={trend['strength']:.5f})")
-        if config.REQUIRE_TREND_AGREEMENT and trend["direction"] != "FLAT":
+        block_strength = config.TREND_BLOCK_MIN_STRENGTH
+        if (config.REQUIRE_TREND_AGREEMENT and trend["direction"] != "FLAT"
+                and trend["strength"] >= block_strength):
             expect_up = (signal.direction == "YES")
             trend_up  = (trend["direction"] == "UP")
             if expect_up != trend_up:
                 log.info(f"  → PASS: {signal.direction} is counter-trend "
-                         f"(price developing {trend['direction']})")
+                         f"(price developing {trend['direction']}, "
+                         f"strength {trend['strength']:.5f} ≥ {block_strength})")
                 return False
 
         # Meta-model probability boost
