@@ -23,6 +23,12 @@ log = logging.getLogger(__name__)
 STRATEGY_NAMES = ["rsi", "macd", "bollinger", "momentum", "vwap", "adx",
                   "stat_outcome", "price_action"]
 
+# Bump whenever the MEANING/scale of _build_features changes (not just the count).
+# v2: probability-first ensemble — yes_score/no_score are now probabilities (0–1)
+# instead of unbounded vote-scores, so a model trained under v1 is invalid even
+# though the feature count is unchanged. A version mismatch forces a clean retrain.
+FEATURE_VERSION = 2
+
 
 class SelfLearner:
     def __init__(self):
@@ -273,13 +279,23 @@ class SelfLearner:
         os.makedirs(os.path.dirname(config.MODEL_PATH), exist_ok=True)
         with open(config.MODEL_PATH, "wb") as f:
             pickle.dump({"model": self.model, "scaler": self.scaler,
-                         "is_fitted": self.is_fitted}, f)
+                         "is_fitted": self.is_fitted,
+                         "feature_version": FEATURE_VERSION}, f)
 
     def _load_model(self):
         if os.path.exists(config.MODEL_PATH):
             try:
                 with open(config.MODEL_PATH, "rb") as f:
                     state = pickle.load(f)
+                # Discard a model trained under an older feature schema — its
+                # inputs no longer mean the same thing, so its predictions would
+                # be miscalibrated. It will retrain automatically once enough
+                # trades have accumulated under the new format.
+                if state.get("feature_version") != FEATURE_VERSION:
+                    log.info("Meta-model on disk is stale (feature schema "
+                             f"v{state.get('feature_version')} != v{FEATURE_VERSION}) "
+                             "— discarding, will retrain on new-format trades.")
+                    return
                 self.model    = state["model"]
                 self.scaler   = state["scaler"]
                 self.is_fitted = state["is_fitted"]
