@@ -2,6 +2,7 @@
 import logging
 import threading
 import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
@@ -57,6 +58,10 @@ class Trader:
         self._current_slug: str = None
         self._slug_trades: int  = 0
         self._last_entry_ts: float = 0.0   # for the per-slug entry cooldown
+        # Track model direction across consecutive roll-checks to filter flip-flops.
+        self._signal_history: deque = deque(maxlen=5)
+        # Block new entries until this timestamp after a LOSING early exit.
+        self._post_exit_until: float = 0.0
         # pending early-exit confirmations: {trade_id: {"reason": str, "count": int}}
         self._exit_pending: Dict[int, dict] = {}
         # One lock serialises every critical section. roll_check fires from BOTH
@@ -189,6 +194,8 @@ class Trader:
             self._current_slug = slug
             self._slug_trades  = 0
             self._last_entry_ts = 0.0
+            self._signal_history.clear()
+            self._post_exit_until = 0.0   # new slug = fresh start, no whipsaw memory
 
         # Point the live WS order-book feed at this slug's tokens
         self.feeds.subscribe_tokens(_market_token_ids(market))
@@ -263,6 +270,30 @@ class Trader:
         if signal.direction == "PASS":
             log.info(f"  → PASS: {signal.details.get('reason', 'no edge / no consensus')}")
             return False
+
+        # ── Post-exit cooldown gate ───────────────────────────────────────────
+        # After a LOSING early exit (model flip / stop-loss), block new entries
+        # for POST_EXIT_COOLDOWN_SECONDS to prevent immediately re-entering in
+        # the opposite direction while the model is still oscillating.
+        now = time.time()
+        if now < self._post_exit_until:
+            remaining = int(self._post_exit_until - now)
+            log.info(f"  → HOLD: post-exit cooldown ({remaining}s left) — "
+                     f"preventing whipsaw re-entry after loss")
+            return False
+
+        # ── Signal stability gate ─────────────────────────────────────────────
+        # Require SIGNAL_STABILITY_COUNT consecutive same-direction signals before
+        # entering. P(up) can swing wildly (0.08 → 0.82 → 0.08) within one slug;
+        # this filters those flip-flops so we only trade a stable model conviction.
+        n_stable = config.SIGNAL_STABILITY_COUNT
+        if n_stable > 1:
+            self._signal_history.append(signal.direction)
+            recent = list(self._signal_history)
+            if len(recent) < n_stable or not all(d == signal.direction for d in recent[-n_stable:]):
+                log.info(f"  → HOLD: signal {signal.direction} not stable yet "
+                         f"(history={recent[-n_stable:]}, need {n_stable}× same)")
+                return False
 
         # Determine the recent price development and block clearly counter-trend
         # bets (YES = expecting UP, NO = expecting DOWN on these up/down markets).
@@ -579,14 +610,21 @@ class Trader:
         log.info(f"  🚪 EARLY EXIT trade {trade.id}: SOLD {trade.side} @ {sell_price:.3f} "
                  f"({reason}) → {emoji} PnL=${pnl:+.4f} ROI={roi:+.1f}%")
 
-        # Free up the slug slot so the agent can re-enter if the market shifts.
-        # Decrement the per-slug counter (floor 0) and reset the cooldown so
-        # the re-entry bar drops back down — the closed trade no longer occupies
-        # a slot, and a fresh setup on the same slug is evaluated from scratch.
+        # Free the slug slot. For LOSING exits apply a re-entry cooldown to stop
+        # the whipsaw pattern (exit NO at loss → buy YES immediately → model flips
+        # back → exit YES at loss). For winning exits (take-profit) allow
+        # immediate re-evaluation so a continuing trend isn't missed.
         self._slug_trades = max(0, self._slug_trades - 1)
-        self._last_entry_ts = 0.0
-        log.info(f"  [slot freed] slug_trades={self._slug_trades} — "
-                 f"ready to re-evaluate for a new entry")
+        if not won:
+            cooldown = getattr(config, "POST_EXIT_COOLDOWN_SECONDS", 90)
+            self._post_exit_until = time.time() + cooldown
+            self._signal_history.clear()   # force N fresh stability readings too
+            log.info(f"  [slot freed] slug_trades={self._slug_trades} — "
+                     f"loss exit: {cooldown}s cooldown + stability reset (anti-whipsaw)")
+        else:
+            self._last_entry_ts = 0.0
+            log.info(f"  [slot freed] slug_trades={self._slug_trades} — "
+                     f"take-profit exit: ready to re-evaluate immediately")
 
         try:
             self.learner.record_trade_result(

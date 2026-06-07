@@ -47,7 +47,7 @@ MODEL_CONF_CAP_MAX       = float(os.getenv("MODEL_CONF_CAP_MAX", "0.97"))
 FEE_EDGE_MARGIN          = float(os.getenv("FEE_EDGE_MARGIN", "0.005"))
 # Skip entries whose fill price sits in this dead-zone around 0.50 (half-width):
 # that's exactly where the fee is highest and the outcome most coin-flip. 0 = off.
-PRICE_DEADZONE_HALF      = float(os.getenv("PRICE_DEADZONE_HALF", "0.02"))
+PRICE_DEADZONE_HALF      = float(os.getenv("PRICE_DEADZONE_HALF", "0.015"))
 
 # ── Risk circuit-breaker ──────────────────────────────────────────────────────
 # Pause new entries after this many consecutive losing trades (0 = disabled).
@@ -111,13 +111,21 @@ ENABLE_EARLY_EXIT        = os.getenv("ENABLE_EARLY_EXIT", "true").lower() == "tr
 # Sell to take profit once the held token's bid reaches this price.
 TAKE_PROFIT_PRICE        = float(os.getenv("TAKE_PROFIT_PRICE", "0.95"))
 # Sell to cut the loss once the held token's bid falls to this price.
-STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.25"))
+STOP_LOSS_PRICE          = float(os.getenv("STOP_LOSS_PRICE", "0.18"))
 # Also exit if the model now favours the OPPOSITE side with at least this prob.
 EXIT_ON_REVERSAL         = os.getenv("EXIT_ON_REVERSAL", "true").lower() == "true"
 MODEL_REVERSAL_PROB      = float(os.getenv("MODEL_REVERSAL_PROB", "0.68"))
+# After a LOSING early exit, block new entries on the same slug for this many
+# seconds. Prevents the whipsaw pattern: exit NO at loss → immediately buy YES
+# → model flips back → exit YES at loss.  A new slug resets this automatically.
+POST_EXIT_COOLDOWN_SECONDS = int(os.getenv("POST_EXIT_COOLDOWN_SECONDS", "90"))
+# Number of consecutive same-direction signals required before a new entry is
+# allowed. Filters model flip-flops (P(up) bouncing 0.08 → 0.82 → 0.08 within
+# a single slug). Set to 1 to disable.
+SIGNAL_STABILITY_COUNT   = int(os.getenv("SIGNAL_STABILITY_COUNT", "3"))
 # Don't sell on a single price touch — the exit condition must hold for this
 # many consecutive roll-checks before we actually close (filters out noise).
-EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "6"))
+EXIT_CONFIRM_COUNT       = int(os.getenv("EXIT_CONFIRM_COUNT", "4"))
 # For a stop-loss, also require the MODEL to agree the position is now likely
 # losing (its prob for our side below this) — don't panic-sell a temporary dip
 # if the model still backs our side.
