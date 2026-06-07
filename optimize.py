@@ -37,6 +37,7 @@ Usage:
 import argparse
 import itertools
 import logging
+import math
 
 import pandas as pd
 
@@ -192,29 +193,50 @@ def run(hours, train_frac, grid, min_trades, objective, top):
               f"maxDD=${o['max_dd']:.2f} n={o['n']}")
 
     # ── Honest verdict ────────────────────────────────────────────────────────
+    # A positive P&L is NOT enough — on a ~coin-flip a lucky day prints green.
+    # We demand the edge be STATISTICALLY SIGNIFICANT: the win-rate's excess over
+    # the fee-aware breakeven must exceed ~2 standard errors (≈95% one-sided), AND
+    # the equity curve must not be fragile (max drawdown ≤ total profit). Anything
+    # short of that is noise dressed up as a result.
     print("\n" + "=" * 78)
     if eligible:
         best = eligible[0]
         b, o = best["combo"], best["oos"]
-        positive = o["total_pnl"] > 0 and o["edge_vs_be"] > 0
-        if positive:
-            print("VERDICT: a positive out-of-sample edge was found. Apply these in config.py\n"
-                  "         (then confirm with a live/paper forward run before trusting it):")
+        wr, n_ = o["win_rate"], o["n"]
+        se = math.sqrt(max(wr * (1.0 - wr), 1e-9) / n_)     # std error of the win-rate
+        z  = o["edge_vs_be"] / se if se else 0.0            # how many σ above breakeven
+        dd_ratio = (abs(o["max_dd"]) / o["total_pnl"]) if o["total_pnl"] > 0 else float("inf")
+        Z_MIN, DD_MAX = 2.0, 1.0
+        real = (o["total_pnl"] > 0 and z >= Z_MIN and dd_ratio <= DD_MAX)
+
+        print(f"Best combo significance: edge_vs_be={o['edge_vs_be']:+.1%}  "
+              f"(±{se:.1%} SE → z={z:+.2f}σ, need ≥{Z_MIN}σ)  "
+              f"maxDD/PnL={dd_ratio:.1f}× (need ≤{DD_MAX:.0f}×)")
+
+        if real:
+            print("VERDICT: ✅ a STATISTICALLY SIGNIFICANT out-of-sample edge was found.\n"
+                  "         Apply these in config.py, then CONFIRM with a live/paper forward\n"
+                  "         run before trusting real money:")
             print(f"    DECIDE at minute        : {b['decide_min']}  (backtest --decide-min)")
             print(f"    STAT_MARKET_WEIGHT      = {b['stat_market_weight']}")
             print(f"    MIN_EDGE_THRESHOLD      = {b['min_edge_threshold']}")
             print(f"    TECH_TILT_MAX           = {b['tech_tilt_max']}")
             print(f"    STAT_MIN_MISPRICING     = {b['stat_min_mispricing']}")
             print(f"  → OOS P&L ${o['total_pnl']:+.2f} over {o['n']} trades, "
-                  f"edge vs breakeven {o['edge_vs_be']:+.1%}, sharpe {o['sharpe']:+.2f}.")
+                  f"edge vs breakeven {o['edge_vs_be']:+.1%} at {z:.1f}σ.")
         else:
-            print("VERDICT: ❌ NO robust edge. The BEST out-of-sample combo across the whole\n"
-                  "         grid still fails to beat the fee-aware breakeven:")
+            print("VERDICT: ❌ NO robust edge. The best out-of-sample combo is GREEN but it is\n"
+                  "         NOT statistically distinguishable from luck:")
+            why = []
+            if o["total_pnl"] <= 0:      why.append("P&L ≤ 0")
+            if z < Z_MIN:                why.append(f"only {z:+.2f}σ above breakeven (need ≥{Z_MIN}σ)")
+            if dd_ratio > DD_MAX:        why.append(f"drawdown {dd_ratio:.1f}× the profit (fragile)")
+            print(f"  reasons: {', '.join(why)}.")
             print(f"  best: pnl=${o['total_pnl']:+.2f}  edge_vs_be={o['edge_vs_be']:+.1%}  "
-                  f"sharpe={o['sharpe']:+.2f}  (n={o['n']})")
-            print("  This is the market talking, not the code: a ~coin-flip 15-min binary with\n"
-                  "  a ~1.8% taker fee has no reliable edge here. Tuning won't manufacture one —\n"
-                  "  consider a longer horizon / different market, or accept it's not tradeable.")
+                  f"sharpe={o['sharpe']:+.2f}  n={o['n']}")
+            print("  A ~coin-flip 15-min binary with a ~1.8% taker fee has no reliable edge at\n"
+                  "  these settings. Re-run with much more history (--hours 72+) and the full\n"
+                  "  grid; if the result stays sub-2σ, the market itself isn't tradeable here.")
     print("Note: out-of-sample is the only number that matters. In-sample (train) results\n"
           "      are shown per-combo only for contrast and are overfit-prone by construction.")
 
