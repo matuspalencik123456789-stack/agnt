@@ -12,6 +12,7 @@ returns safely instead of crashing the trading loop.
 import logging
 import time
 import re
+import importlib
 from typing import List, Dict, Optional
 
 import requests
@@ -47,7 +48,13 @@ class PolymarketClient:
         self._client = None
         self._allowance_ok = False     # set once USDC approval is confirmed
         self._neg_risk_cache: Dict[str, bool] = {}   # token_id → neg_risk flag
+        self._pkg = None               # active SDK package name
+        self._v2 = False               # True when using py_clob_client_v2
         self._init_client()
+
+    def _ct(self):
+        """clob_types module of whichever SDK package is active."""
+        return importlib.import_module(self._pkg + ".clob_types")
 
     def _is_neg_risk(self, token_id: str) -> bool:
         """Whether a token belongs to a neg-risk market. Orders on neg-risk
@@ -76,10 +83,29 @@ class PolymarketClient:
         if not config.POLYMARKET_PRIVATE_KEY:
             log.warning("No Polymarket private key — paper mode (no real trades).")
             return
-        try:
-            from py_clob_client.client import ClobClient
-            from py_clob_client.clob_types import ApiCreds
 
+        # CLOB V2 went live in 2026; the legacy py_clob_client (V1) signs an
+        # outdated EIP-712 version the server now rejects with
+        # 'invalid order version'. Prefer py_clob_client_v2, fall back to V1
+        # only if V2 isn't installed.
+        ClobClient = ApiCreds = None
+        for pkg in ("py_clob_client_v2", "py_clob_client"):
+            try:
+                ClobClient = importlib.import_module(pkg + ".client").ClobClient
+                ApiCreds   = importlib.import_module(pkg + ".clob_types").ApiCreds
+                self._pkg = pkg
+                self._v2 = (pkg == "py_clob_client_v2")
+                break
+            except ImportError:
+                continue
+        if ClobClient is None:
+            log.warning("py-clob-client-v2 not installed — paper mode only. "
+                        "Run: pip install py-clob-client-v2 web3")
+            return
+        log.info(f"Using CLOB SDK: {self._pkg} "
+                 f"({'V2' if self._v2 else 'V1 (legacy — orders may be rejected)'}).")
+
+        try:
             # signature_type 2 = Polymarket proxy/email wallet; the USDC and the
             # outcome tokens live in the FUNDER (proxy) address, not the EOA
             # derived from the key — so it must be supplied or orders sign for
@@ -111,9 +137,6 @@ class PolymarketClient:
             # Make sure USDC is approved for trading before the first order.
             if getattr(config, "AUTO_APPROVE_USDC", True):
                 self.ensure_allowance()
-        except ImportError:
-            log.warning("py_clob_client not installed — paper mode only. "
-                        "Run: pip3 install py-clob-client web3")
         except Exception as e:
             log.error(f"CLOB client init error: {e}")
             self._client = None
@@ -299,48 +322,81 @@ class PolymarketClient:
         """
         Place a marketable Fill-or-Kill order.
 
-        amount semantics (py_clob_client MarketOrderArgs):
+        amount semantics:
           • BUY  → `amount` is USDC to spend
           • SELL → `amount` is the number of shares to sell
-        Falls back to a crossing LIMIT order if the market-order API differs
-        across py_clob_client versions.
+        Routes to the V2 SDK (create_and_post_*) when active, else the legacy
+        V1 path. Falls back to a crossing fill-and-kill LIMIT order on failure.
         """
+        self.ensure_allowance()
+        ct = self._ct()
         # neg-risk markets must build the order for the neg-risk exchange.
         neg_risk = self._is_neg_risk(token_id)
         opts = None
         try:
-            from py_clob_client.clob_types import PartialCreateOrderOptions
-            opts = PartialCreateOrderOptions(neg_risk=neg_risk)
+            opts = ct.PartialCreateOrderOptions(neg_risk=neg_risk)
         except Exception:
             opts = None
+        if self._v2:
+            return self._market_order_v2(ct, token_id, action, amount, price, opts)
+        return self._market_order_v1(ct, token_id, action, amount, price, opts)
+
+    def _oid(self, resp) -> str:
+        return (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
+
+    def _market_order_v2(self, ct, token_id, action, amount, price, opts):
+        """py_clob_client_v2: create_and_post_* sign AND submit in one call."""
+        from py_clob_client_v2 import Side, OrderType
+        side = Side.BUY if action == "BUY" else Side.SELL
         try:
-            from py_clob_client.clob_types import MarketOrderArgs, OrderType
-            from py_clob_client.order_builder.constants import BUY, SELL
-            self.ensure_allowance()
-            side_const = BUY if action == "BUY" else SELL
-            args = MarketOrderArgs(token_id=token_id, amount=round(amount, 4),
-                                   side=side_const, price=round(price, 4))
-            signed = (self._client.create_market_order(args, opts) if opts
-                      else self._client.create_market_order(args))
-            resp = self._client.post_order(signed, OrderType.FOK)
-            oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
+            args = ct.MarketOrderArgsV2(token_id=token_id, amount=round(amount, 4),
+                                        side=side, price=round(price, 4),
+                                        order_type=OrderType.FOK)
+            resp = self._client.create_and_post_market_order(args, opts, OrderType.FOK)
+            oid = self._oid(resp)
             log.info(f"LIVE {action} order filled: amount={amount:.4f} "
                      f"@~{price:.3f} → {oid or resp}")
             return oid or f"LIVE_{int(time.time())}"
         except Exception as e:
             log.warning(f"market order ({action}) failed ({e}); trying limit fallback.")
-        # ── Fallback: crossing limit order (size always in SHARES) ────────────
         try:
-            from py_clob_client.clob_types import OrderArgs, OrderType
-            from py_clob_client.order_builder.constants import BUY, SELL
             shares = amount / price if action == "BUY" else amount
-            args = OrderArgs(token_id=token_id, price=round(price, 4),
-                             size=round(shares, 4),
-                             side=(BUY if action == "BUY" else SELL))
+            args = ct.OrderArgsV2(token_id=token_id, price=round(price, 4),
+                                  size=round(shares, 4), side=side)
+            resp = self._client.create_and_post_order(args, opts, OrderType.FAK)
+            oid = self._oid(resp)
+            log.info(f"LIVE {action} limit-fallback posted: {oid or resp}")
+            return oid or f"LIVE_{int(time.time())}"
+        except Exception as e:
+            log.error(f"place_order ({action}) error: {e}")
+            return None
+
+    def _market_order_v1(self, ct, token_id, action, amount, price, opts):
+        """Legacy py_clob_client (V1). Kept only as a fallback; the CLOB V2
+        server rejects these signatures with 'invalid order version'."""
+        from py_clob_client.order_builder.constants import BUY, SELL
+        try:
+            side_const = BUY if action == "BUY" else SELL
+            args = ct.MarketOrderArgs(token_id=token_id, amount=round(amount, 4),
+                                      side=side_const, price=round(price, 4))
+            signed = (self._client.create_market_order(args, opts) if opts
+                      else self._client.create_market_order(args))
+            resp = self._client.post_order(signed, ct.OrderType.FOK)
+            oid = self._oid(resp)
+            log.info(f"LIVE {action} order filled: amount={amount:.4f} "
+                     f"@~{price:.3f} → {oid or resp}")
+            return oid or f"LIVE_{int(time.time())}"
+        except Exception as e:
+            log.warning(f"market order ({action}) failed ({e}); trying limit fallback.")
+        try:
+            shares = amount / price if action == "BUY" else amount
+            args = ct.OrderArgs(token_id=token_id, price=round(price, 4),
+                                size=round(shares, 4),
+                                side=(BUY if action == "BUY" else SELL))
             signed = (self._client.create_order(args, opts) if opts
                       else self._client.create_order(args))
-            resp = self._client.post_order(signed, OrderType.FAK)  # fill-and-kill
-            oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
+            resp = self._client.post_order(signed, ct.OrderType.FAK)
+            oid = self._oid(resp)
             log.info(f"LIVE {action} limit-fallback posted: {oid or resp}")
             return oid or f"LIVE_{int(time.time())}"
         except Exception as e:
@@ -354,8 +410,8 @@ class PolymarketClient:
         if not self._client:
             return 0.0
         try:
-            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            ct = self._ct()
+            params = ct.BalanceAllowanceParams(asset_type=ct.AssetType.COLLATERAL)
             resp = self._client.get_balance_allowance(params)
             raw = resp.get("balance") if isinstance(resp, dict) else getattr(resp, "balance", None)
             # USDC has 6 decimals; the endpoint returns base units as a string.
@@ -372,8 +428,8 @@ class PolymarketClient:
         if not self._client or self._allowance_ok:
             return self._allowance_ok
         try:
-            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
-            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            ct = self._ct()
+            params = ct.BalanceAllowanceParams(asset_type=ct.AssetType.COLLATERAL)
             cur = self._client.get_balance_allowance(params)
             allowance = cur.get("allowance") if isinstance(cur, dict) else getattr(cur, "allowance", 0)
             if allowance and float(allowance) > 0:
