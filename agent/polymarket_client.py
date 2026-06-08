@@ -46,7 +46,31 @@ class PolymarketClient:
         self._clob_host = config.CLOB_HOST
         self._client = None
         self._allowance_ok = False     # set once USDC approval is confirmed
+        self._neg_risk_cache: Dict[str, bool] = {}   # token_id → neg_risk flag
         self._init_client()
+
+    def _is_neg_risk(self, token_id: str) -> bool:
+        """Whether a token belongs to a neg-risk market. Orders on neg-risk
+        markets must be built for the neg-risk exchange contract, otherwise the
+        exchange rejects them ('invalid order version'). Cached per token."""
+        if token_id in self._neg_risk_cache:
+            return self._neg_risk_cache[token_id]
+        flag = False
+        try:
+            resp = self._client.get_neg_risk(token_id)
+            flag = bool(resp) if isinstance(resp, bool) else bool(
+                (resp or {}).get("neg_risk", (resp or {}).get("negRisk", False)))
+        except Exception:
+            # Fallback to the public endpoint if the client lacks the helper.
+            try:
+                r = requests.get(f"{self._clob_host}/neg-risk",
+                                 params={"token_id": token_id}, timeout=8)
+                if r.ok:
+                    flag = bool(r.json().get("neg_risk", False))
+            except Exception:
+                flag = False
+        self._neg_risk_cache[token_id] = flag
+        return flag
 
     def _init_client(self):
         if not config.POLYMARKET_PRIVATE_KEY:
@@ -281,6 +305,14 @@ class PolymarketClient:
         Falls back to a crossing LIMIT order if the market-order API differs
         across py_clob_client versions.
         """
+        # neg-risk markets must build the order for the neg-risk exchange.
+        neg_risk = self._is_neg_risk(token_id)
+        opts = None
+        try:
+            from py_clob_client.clob_types import PartialCreateOrderOptions
+            opts = PartialCreateOrderOptions(neg_risk=neg_risk)
+        except Exception:
+            opts = None
         try:
             from py_clob_client.clob_types import MarketOrderArgs, OrderType
             from py_clob_client.order_builder.constants import BUY, SELL
@@ -288,7 +320,8 @@ class PolymarketClient:
             side_const = BUY if action == "BUY" else SELL
             args = MarketOrderArgs(token_id=token_id, amount=round(amount, 4),
                                    side=side_const, price=round(price, 4))
-            signed = self._client.create_market_order(args)
+            signed = (self._client.create_market_order(args, opts) if opts
+                      else self._client.create_market_order(args))
             resp = self._client.post_order(signed, OrderType.FOK)
             oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
             log.info(f"LIVE {action} order filled: amount={amount:.4f} "
@@ -304,7 +337,8 @@ class PolymarketClient:
             args = OrderArgs(token_id=token_id, price=round(price, 4),
                              size=round(shares, 4),
                              side=(BUY if action == "BUY" else SELL))
-            signed = self._client.create_order(args)
+            signed = (self._client.create_order(args, opts) if opts
+                      else self._client.create_order(args))
             resp = self._client.post_order(signed, OrderType.FAK)  # fill-and-kill
             oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
             log.info(f"LIVE {action} limit-fallback posted: {oid or resp}")
