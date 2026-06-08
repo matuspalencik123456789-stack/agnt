@@ -756,7 +756,12 @@ class Trader:
                 trade.closed_at  = datetime.utcnow()
 
                 # LIVE: queue the winning market for on-chain redemption to USDC.
-                if won and self.poly._client and getattr(config, "ENABLE_REDEEM", True):
+                # On-chain redemption only for EOA wallets (sig_type=0).
+                # Proxy/email wallets (sig_type 1/2) get auto-redeemed by
+                # Polymarket — calling redeemPositions would just fail with 401
+                # on the public Polygon RPC and the tokens are already gone anyway.
+                sig_type = int(getattr(config, "POLYMARKET_SIGNATURE_TYPE", 2))
+                if won and self.poly._client and getattr(config, "ENABLE_REDEEM", True) and sig_type == 0:
                     to_redeem.add(trade.market_id)
 
                 emoji = "✅ WIN" if won else "❌ LOSS"
