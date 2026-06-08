@@ -128,7 +128,11 @@ class PolymarketClient:
                 self._client = ClobClient(**kwargs)
             else:
                 self._client = ClobClient(**kwargs)
-                creds = self._client.create_or_derive_api_creds()
+                # V1 method: create_or_derive_api_creds; V2 renamed it to
+                # create_or_derive_api_key. Use whichever the SDK exposes.
+                derive = (getattr(self._client, "create_or_derive_api_creds", None)
+                          or getattr(self._client, "create_or_derive_api_key", None))
+                creds = derive()
                 self._client.set_api_creds(creds)
                 log.info("Derived Polymarket API credentials from private key.")
 
