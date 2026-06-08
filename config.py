@@ -12,6 +12,23 @@ POLYMARKET_PRIVATE_KEY = os.getenv("POLYMARKET_PRIVATE_KEY", "")
 CLOB_HOST = os.getenv("CLOB_HOST", "https://clob.polymarket.com")
 GAMMA_API  = "https://gamma-api.polymarket.com"
 
+# ── Live execution (only used when POLYMARKET_PRIVATE_KEY is set) ─────────────
+# Signature type: 2 = Polymarket proxy/email wallet (the default for accounts
+# funded through polymarket.com), 0 = a plain EOA you control directly.
+POLYMARKET_SIGNATURE_TYPE = int(os.getenv("POLYMARKET_SIGNATURE_TYPE", "2"))
+# The FUNDER (proxy) address that actually holds your USDC + outcome tokens.
+# Required for signature_type 1/2 — find it on polymarket.com (your deposit
+# address). Leave blank only for a pure-EOA (signature_type 0) setup.
+POLYMARKET_FUNDER  = os.getenv("POLYMARKET_FUNDER", "")
+# Approve USDC for the exchange automatically before the first trade.
+AUTO_APPROVE_USDC  = os.getenv("AUTO_APPROVE_USDC", "true").lower() == "true"
+# Redeem winning positions to USDC after a market resolves.
+ENABLE_REDEEM      = os.getenv("ENABLE_REDEEM", "true").lower() == "true"
+# Polygon RPC + contract addresses for on-chain redemption.
+POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://polygon-rpc.com")
+USDC_ADDRESS = os.getenv("USDC_ADDRESS", "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+CTF_ADDRESS  = os.getenv("CTF_ADDRESS",  "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
+
 # ── Trading ──────────────────────────────────────────────────────────────────
 TRADING_INTERVAL_MINUTES = 15
 MAX_POSITION_SIZE_USD    = float(os.getenv("MAX_POSITION_SIZE_USD", "5"))   # max $5 per trade

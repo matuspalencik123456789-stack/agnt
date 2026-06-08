@@ -559,6 +559,10 @@ class Trader:
                     continue
 
                 self._exit_pending.pop(trade.id, None)
+                # LIVE: actually sell the token on the book before recording the
+                # exit. Paper mode skips this (self.poly._client is None).
+                if self.poly._client:
+                    self.poly.sell_position(token, trade.shares or 0, sell_px)
                 self._close_position_early(session, trade, sell_px, reason)
 
             session.commit()
@@ -663,6 +667,7 @@ class Trader:
         try:
             open_trades = session.query(Trade).filter(Trade.resolved == False).all()
             now_utc = datetime.now(timezone.utc)
+            to_redeem: set = set()   # LIVE: condition ids of winners to claim
 
             for trade in open_trades:
                 resolution = None
@@ -719,6 +724,10 @@ class Trader:
                 trade.roi_pct    = roi
                 trade.closed_at  = datetime.utcnow()
 
+                # LIVE: queue the winning market for on-chain redemption to USDC.
+                if won and self.poly._client and getattr(config, "ENABLE_REDEEM", True):
+                    to_redeem.add(trade.market_id)
+
                 emoji = "✅ WIN" if won else "❌ LOSS"
                 log.info(
                     f"  {emoji} trade {trade.id}: side={trade.side} res={resolution} "
@@ -736,6 +745,13 @@ class Trader:
                     log.debug(f"learner.record: {e}")
 
             session.commit()
+
+            # LIVE: redeem each resolved winning market once (off the DB session).
+            for cond in to_redeem:
+                try:
+                    self.poly.redeem_position(cond)
+                except Exception as e:
+                    log.debug(f"redeem {cond}: {e}")
         except Exception as e:
             session.rollback()
             log.error(f"check_resolutions error: {e}")

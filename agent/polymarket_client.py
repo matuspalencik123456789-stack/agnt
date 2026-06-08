@@ -1,4 +1,14 @@
-"""Polymarket CLOB API client with BTC market discovery."""
+"""Polymarket CLOB API client with BTC market discovery + live execution.
+
+PAPER mode (no POLYMARKET_PRIVATE_KEY): every write method is a no-op stub that
+just logs, so the agent runs end-to-end without touching real money.
+
+LIVE mode (key present): real orders via py_clob_client, real USDC balance via
+the CLOB balance/allowance endpoint, automatic USDC allowance approval, and
+on-chain redemption of winning positions via the Conditional Tokens Framework
+(CTF) contract using web3. All live calls are wrapped so a failure logs and
+returns safely instead of crashing the trading loop.
+"""
 import logging
 import time
 import re
@@ -10,12 +20,32 @@ import config
 
 log = logging.getLogger(__name__)
 
+# Polygon mainnet contract addresses (used for on-chain redemption).
+DATA_API = "https://data-api.polymarket.com"
+
+# Minimal ABI: only redeemPositions, which converts resolved outcome tokens
+# back into USDC for the winning side.
+_CTF_ABI = [{
+    "constant": False,
+    "inputs": [
+        {"name": "collateralToken",    "type": "address"},
+        {"name": "parentCollectionId", "type": "bytes32"},
+        {"name": "conditionId",        "type": "bytes32"},
+        {"name": "indexSets",          "type": "uint256[]"},
+    ],
+    "name": "redeemPositions",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function",
+}]
+
 
 class PolymarketClient:
     def __init__(self):
         self._gamma = config.GAMMA_API
         self._clob_host = config.CLOB_HOST
         self._client = None
+        self._allowance_ok = False     # set once USDC approval is confirmed
         self._init_client()
 
     def _init_client(self):
@@ -25,23 +55,44 @@ class PolymarketClient:
         try:
             from py_clob_client.client import ClobClient
             from py_clob_client.clob_types import ApiCreds
-            creds = ApiCreds(
-                api_key=config.POLYMARKET_API_KEY,
-                api_secret=config.POLYMARKET_SECRET,
-                api_passphrase=config.POLYMARKET_PASSPHRASE,
-            )
-            self._client = ClobClient(
-                host=self._clob_host,
-                chain_id=137,
-                key=config.POLYMARKET_PRIVATE_KEY,
-                creds=creds,
-                signature_type=2,
-            )
-            log.info("Polymarket CLOB client initialized.")
+
+            # signature_type 2 = Polymarket proxy/email wallet; the USDC and the
+            # outcome tokens live in the FUNDER (proxy) address, not the EOA
+            # derived from the key — so it must be supplied or orders sign for
+            # the wrong account. signature_type 0 = a plain EOA (funder unused).
+            sig_type = int(getattr(config, "POLYMARKET_SIGNATURE_TYPE", 2))
+            funder   = getattr(config, "POLYMARKET_FUNDER", "") or None
+
+            kwargs = dict(host=self._clob_host, chain_id=137,
+                          key=config.POLYMARKET_PRIVATE_KEY, signature_type=sig_type)
+            if funder:
+                kwargs["funder"] = funder
+
+            # Use supplied API creds if present, else derive them from the key.
+            if config.POLYMARKET_API_KEY and config.POLYMARKET_SECRET:
+                kwargs["creds"] = ApiCreds(
+                    api_key=config.POLYMARKET_API_KEY,
+                    api_secret=config.POLYMARKET_SECRET,
+                    api_passphrase=config.POLYMARKET_PASSPHRASE,
+                )
+                self._client = ClobClient(**kwargs)
+            else:
+                self._client = ClobClient(**kwargs)
+                creds = self._client.create_or_derive_api_creds()
+                self._client.set_api_creds(creds)
+                log.info("Derived Polymarket API credentials from private key.")
+
+            log.info(f"Polymarket CLOB client initialized "
+                     f"(sig_type={sig_type}, funder={'set' if funder else 'EOA'}).")
+            # Make sure USDC is approved for trading before the first order.
+            if getattr(config, "AUTO_APPROVE_USDC", True):
+                self.ensure_allowance()
         except ImportError:
-            log.warning("py_clob_client not installed — paper mode only.")
+            log.warning("py_clob_client not installed — paper mode only. "
+                        "Run: pip3 install py-clob-client web3")
         except Exception as e:
             log.error(f"CLOB client init error: {e}")
+            self._client = None
 
     # ── Market discovery ─────────────────────────────────────────────────────
 
@@ -96,6 +147,25 @@ class PolymarketClient:
             log.error(f"get_book error: {e}")
             return None
 
+    def _book_levels(self, book, side: str):
+        """Return sorted (price, size) levels from a book, dict- or object-shaped."""
+        raw = None
+        if isinstance(book, dict):
+            raw = book.get(side, [])
+        else:
+            raw = getattr(book, side, None)
+        levels = []
+        for lvl in (raw or []):
+            try:
+                if isinstance(lvl, dict):
+                    levels.append((float(lvl["price"]), float(lvl.get("size", 0))))
+                else:
+                    levels.append((float(lvl.price), float(getattr(lvl, "size", 0))))
+            except Exception:
+                continue
+        levels.sort(key=lambda x: x[0], reverse=(side == "bids"))
+        return levels
+
     def get_mid_price(self, token_id: str) -> Optional[float]:
         # prefer live WebSocket price
         try:
@@ -105,49 +175,35 @@ class PolymarketClient:
                 return live_mid
         except Exception:
             pass
-        # fallback to REST order book
         book = self.get_book(token_id)
         if not book:
             return None
-        try:
-            bids = sorted(book.get("bids", []), key=lambda x: float(x["price"]), reverse=True)
-            asks = sorted(book.get("asks", []), key=lambda x: float(x["price"]))
-            if bids and asks:
-                return (float(bids[0]["price"]) + float(asks[0]["price"])) / 2
-        except Exception:
-            pass
+        bids = self._book_levels(book, "bids")
+        asks = self._book_levels(book, "asks")
+        if bids and asks:
+            return (bids[0][0] + asks[0][0]) / 2
         return None
 
     def get_buy_price(self, token_id: str, mid: float) -> float:
-        """
-        Realistic fill price for BUYING this token: cross the spread to the ask.
-        Uses the live order book's best ask when available; otherwise models an
-        assumed spread around the mid. Clamped to (0, 1).
-        """
-        # try the real ask from the order book
+        """Realistic BUY fill: cross to the best ask (live book), else mid+spread/2."""
         try:
             book = self.get_book(token_id) if token_id else None
             if book:
-                asks = sorted(book.get("asks", []), key=lambda x: float(x["price"]))
+                asks = self._book_levels(book, "asks")
                 if asks:
-                    return min(0.999, float(asks[0]["price"]))
+                    return min(0.999, asks[0][0])
         except Exception:
             pass
-        # fallback: mid + half the assumed spread
         return min(0.999, max(0.001, mid + config.PAPER_SPREAD / 2.0))
 
     def get_sell_price(self, token_id: str, mid: float) -> float:
-        """
-        Realistic fill price for SELLING this token: cross the spread to the bid.
-        Uses the live order book's best bid when available; otherwise models an
-        assumed spread around the mid. Clamped to (0, 1).
-        """
+        """Realistic SELL fill: cross to the best bid (live book), else mid-spread/2."""
         try:
             book = self.get_book(token_id) if token_id else None
             if book:
-                bids = sorted(book.get("bids", []), key=lambda x: float(x["price"]), reverse=True)
+                bids = self._book_levels(book, "bids")
                 if bids:
-                    return max(0.001, float(bids[0]["price"]))
+                    return max(0.001, bids[0][0])
         except Exception:
             pass
         return min(0.999, max(0.001, mid - config.PAPER_SPREAD / 2.0))
@@ -177,41 +233,177 @@ class PolymarketClient:
 
     def place_market_order(self, token_id: str, side: str,
                            size_usd: float, price: float) -> Optional[str]:
+        """
+        OPEN a position: BUY `size_usd` worth of the given outcome token.
+
+        On Polymarket you take a position by BUYING the YES *or* the NO token —
+        the order side is therefore ALWAYS 'BUY'; `token_id` already encodes
+        which outcome. (The old code wrongly passed the YES/NO outcome as the
+        order side, which the exchange rejects.) Returns the order id, or None.
+        """
         if not self._client:
-            log.info(f"[paper] {side} ${size_usd:.2f} @ {price:.3f} (token={token_id[:12]}...)")
+            log.info(f"[paper] BUY {side}-token ${size_usd:.2f} @ {price:.3f} "
+                     f"(token={token_id[:12]}...)")
             return f"PAPER_{int(time.time())}"
+        return self._market_order(token_id, "BUY", size_usd, price)
+
+    def sell_position(self, token_id: str, shares: float,
+                      price: float) -> Optional[str]:
+        """CLOSE (early-exit) a position: SELL `shares` of the held outcome token."""
+        if not self._client:
+            log.info(f"[paper] SELL {shares:.4f} sh @ {price:.3f} "
+                     f"(token={token_id[:12]}...)")
+            return f"PAPER_SELL_{int(time.time())}"
+        if shares <= 0:
+            return None
+        return self._market_order(token_id, "SELL", shares, price)
+
+    def _market_order(self, token_id: str, action: str,
+                      amount: float, price: float) -> Optional[str]:
+        """
+        Place a marketable Fill-or-Kill order.
+
+        amount semantics (py_clob_client MarketOrderArgs):
+          • BUY  → `amount` is USDC to spend
+          • SELL → `amount` is the number of shares to sell
+        Falls back to a crossing LIMIT order if the market-order API differs
+        across py_clob_client versions.
+        """
         try:
-            from py_clob_client.clob_types import OrderArgs
-            size = round(size_usd / price, 4)
-            order_args = OrderArgs(
-                token_id=token_id,
-                price=round(price, 4),
-                size=size,
-                side=side.lower(),
-            )
-            resp = self._client.create_and_post_order(order_args)
-            order_id = resp.get("orderID", "")
-            log.info(f"Order placed: {side} {size} @ {price} -> {order_id}")
-            return order_id
+            from py_clob_client.clob_types import MarketOrderArgs, OrderType
+            from py_clob_client.order_builder.constants import BUY, SELL
+            self.ensure_allowance()
+            side_const = BUY if action == "BUY" else SELL
+            args = MarketOrderArgs(token_id=token_id, amount=round(amount, 4),
+                                   side=side_const, price=round(price, 4))
+            signed = self._client.create_market_order(args)
+            resp = self._client.post_order(signed, OrderType.FOK)
+            oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
+            log.info(f"LIVE {action} order filled: amount={amount:.4f} "
+                     f"@~{price:.3f} → {oid or resp}")
+            return oid or f"LIVE_{int(time.time())}"
         except Exception as e:
-            log.error(f"place_order error: {e}")
+            log.warning(f"market order ({action}) failed ({e}); trying limit fallback.")
+        # ── Fallback: crossing limit order (size always in SHARES) ────────────
+        try:
+            from py_clob_client.clob_types import OrderArgs, OrderType
+            from py_clob_client.order_builder.constants import BUY, SELL
+            shares = amount / price if action == "BUY" else amount
+            args = OrderArgs(token_id=token_id, price=round(price, 4),
+                             size=round(shares, 4),
+                             side=(BUY if action == "BUY" else SELL))
+            signed = self._client.create_order(args)
+            resp = self._client.post_order(signed, OrderType.FAK)  # fill-and-kill
+            oid = (resp or {}).get("orderID", "") if isinstance(resp, dict) else ""
+            log.info(f"LIVE {action} limit-fallback posted: {oid or resp}")
+            return oid or f"LIVE_{int(time.time())}"
+        except Exception as e:
+            log.error(f"place_order ({action}) error: {e}")
             return None
 
-    def get_portfolio(self) -> List[Dict]:
-        if not self._client:
-            return []
-        try:
-            return self._client.get_positions() or []
-        except Exception as e:
-            log.error(f"get_portfolio error: {e}")
-            return []
+    # ── Balance / allowance ──────────────────────────────────────────────────
 
     def get_balance(self) -> float:
+        """Real USDC collateral balance (in dollars), or 0.0 in paper mode."""
         if not self._client:
             return 0.0
         try:
-            bal = self._client.get_balance()
-            return float(bal) if bal else 0.0
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            resp = self._client.get_balance_allowance(params)
+            raw = resp.get("balance") if isinstance(resp, dict) else getattr(resp, "balance", None)
+            # USDC has 6 decimals; the endpoint returns base units as a string.
+            return round(float(raw) / 1_000_000, 2) if raw is not None else 0.0
         except Exception as e:
             log.error(f"get_balance error: {e}")
             return 0.0
+
+    def ensure_allowance(self) -> bool:
+        """
+        Make sure the CLOB exchange is approved to move our USDC. Without this the
+        very first BUY reverts. Runs once (cached); safe to call repeatedly.
+        """
+        if not self._client or self._allowance_ok:
+            return self._allowance_ok
+        try:
+            from py_clob_client.clob_types import BalanceAllowanceParams, AssetType
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            cur = self._client.get_balance_allowance(params)
+            allowance = cur.get("allowance") if isinstance(cur, dict) else getattr(cur, "allowance", 0)
+            if allowance and float(allowance) > 0:
+                self._allowance_ok = True
+                return True
+            log.info("Approving USDC allowance for the CLOB exchange (one-time)...")
+            self._client.update_balance_allowance(params)
+            self._allowance_ok = True
+            log.info("USDC allowance approved.")
+            return True
+        except Exception as e:
+            log.error(f"ensure_allowance error: {e}")
+            return False
+
+    def get_portfolio(self) -> List[Dict]:
+        return self.get_positions()
+
+    def get_positions(self) -> List[Dict]:
+        """Open positions from the Polymarket Data API (keyed on the funder addr)."""
+        if not self._client:
+            return []
+        try:
+            addr = getattr(config, "POLYMARKET_FUNDER", "") or self._client.get_address()
+            resp = requests.get(f"{DATA_API}/positions",
+                                params={"user": addr}, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            return data if isinstance(data, list) else data.get("positions", [])
+        except Exception as e:
+            log.error(f"get_positions error: {e}")
+            return []
+
+    # ── Redemption of winnings (on-chain) ────────────────────────────────────
+
+    def redeem_position(self, condition_id: str) -> Optional[str]:
+        """
+        Convert a RESOLVED market's winning outcome tokens back into USDC by
+        calling redeemPositions on the CTF contract. Returns the tx hash.
+
+        Note on proxy wallets: with signature_type 1/2 the tokens are held by the
+        Polymarket proxy (funder) address, and Polymarket typically AUTO-REDEEMS
+        resolved winnings to your balance — so manual redemption is usually
+        unnecessary there and a direct EOA call would redeem nothing. This path
+        is implemented for EOA-held tokens (signature_type 0) and as an explicit
+        fallback; it no-ops cleanly when web3/key/RPC aren't available.
+        """
+        if not self._client or not getattr(config, "ENABLE_REDEEM", True):
+            return None
+        try:
+            from web3 import Web3
+        except ImportError:
+            log.warning("web3 not installed — cannot redeem. Run: pip3 install web3")
+            return None
+        try:
+            w3 = Web3(Web3.HTTPProvider(config.POLYGON_RPC))
+            acct = w3.eth.account.from_key(config.POLYMARKET_PRIVATE_KEY)
+            ctf = w3.eth.contract(
+                address=Web3.to_checksum_address(config.CTF_ADDRESS), abi=_CTF_ABI)
+            usdc = Web3.to_checksum_address(config.USDC_ADDRESS)
+            parent = b"\x00" * 32
+            cond = condition_id if condition_id.startswith("0x") else "0x" + condition_id
+            cond_bytes = bytes.fromhex(cond[2:])
+            fn = ctf.functions.redeemPositions(usdc, parent, cond_bytes, [1, 2])
+            tx = fn.build_transaction({
+                "from": acct.address,
+                "nonce": w3.eth.get_transaction_count(acct.address),
+                "gas": 200_000,
+                "maxFeePerGas": w3.to_wei("100", "gwei"),
+                "maxPriorityFeePerGas": w3.to_wei("30", "gwei"),
+                "chainId": 137,
+            })
+            signed = acct.sign_transaction(tx)
+            txh = w3.eth.send_raw_transaction(signed.raw_transaction)
+            h = txh.hex()
+            log.info(f"Redeem submitted for condition {cond[:14]}… → tx {h}")
+            return h
+        except Exception as e:
+            log.error(f"redeem_position error: {e}")
+            return None
