@@ -182,6 +182,39 @@ else:
     today_val = 0.0
 c6.metric("Today P&L", f"${today_val:+.2f}")
 
+# ── Live balance + Session P&L (anchored to real Polymarket balance) ──────────
+@st.cache_data(ttl=15)
+def _live_balance_and_baseline():
+    """Real Polymarket USDC balance + the baseline recorded at last reset."""
+    bal = None
+    try:
+        from agent.polymarket_client import PolymarketClient
+        poly = PolymarketClient()
+        if poly._client:
+            bal = poly.get_balance()
+    except Exception:
+        bal = None
+    base = None
+    try:
+        from agent.database.models import get_baseline
+        b = get_baseline()
+        base = b.balance if b else None
+    except Exception:
+        base = None
+    return bal, base
+
+_bal, _base = _live_balance_and_baseline()
+if _bal is not None:
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Live Balance", f"${_bal:,.2f}")
+    d2.metric("Baseline", f"${_base:,.2f}" if _base is not None else "—")
+    if _base is not None:
+        sess = _bal - _base
+        d3.metric("Session P&L", f"${sess:+.2f}",
+                  delta_color="normal" if sess >= 0 else "inverse")
+    else:
+        d3.metric("Session P&L", "run reset_finances.py")
+
 # ── Row 1: BTC chart + Equity curve ──────────────────────────────────────────
 st.divider()
 col_btc, col_eq = st.columns([3, 2])

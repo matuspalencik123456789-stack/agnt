@@ -79,6 +79,20 @@ class BTCCandle(Base):
     volume    = Column(Float)
 
 
+class AccountBaseline(Base):
+    """A snapshot of the real Polymarket USDC balance at a 'reset' moment.
+
+    Session P&L is then measured as (current real balance − baseline balance),
+    so the dashboard reflects what actually happened to the account on-chain
+    rather than the sum of locally-recorded trades."""
+    __tablename__ = "account_baseline"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp  = Column(DateTime, default=datetime.utcnow, index=True)
+    balance    = Column(Float)          # real USDC balance at reset
+    note       = Column(String(128))
+
+
 class AgentLog(Base):
     __tablename__ = "agent_logs"
 
@@ -179,3 +193,23 @@ def get_session():
 
 def init_db():
     get_engine()   # builds engine, runs create_all + migrations + indexes once
+
+
+def set_baseline(balance: float, note: str = "reset") -> None:
+    """Record a new account baseline (the real Polymarket balance right now)."""
+    session = get_session()
+    try:
+        session.add(AccountBaseline(balance=round(float(balance), 4), note=note))
+        session.commit()
+    finally:
+        session.close()
+
+
+def get_baseline():
+    """Most recent baseline row, or None if finances were never reset."""
+    session = get_session()
+    try:
+        return session.query(AccountBaseline).order_by(
+            AccountBaseline.id.desc()).first()
+    finally:
+        session.close()
