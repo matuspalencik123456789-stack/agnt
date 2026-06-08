@@ -17,4 +17,6 @@ ccxt
 httpx
 
 # ── LIVE trading only (lazy-imported, install separately if going live) ───────
-# pip3 install py-clob-client web3
+# Keep py-clob-client CURRENT — the CLOB exchange rejects orders signed by an
+# outdated client ("invalid order version, please use the latest clob-client").
+# pip3 install -U py-clob-client web3
