@@ -209,8 +209,8 @@ class PolymarketClient:
         return min(0.999, max(0.001, mid - config.PAPER_SPREAD / 2.0))
 
     def get_market_prices(self, market: Dict) -> tuple:
-        tokens = market.get("tokens", market.get("clobTokenIds", []))
         yes_token = no_token = None
+        tokens = market.get("tokens")
         if isinstance(tokens, list):
             for t in tokens:
                 if isinstance(t, dict):
@@ -219,6 +219,18 @@ class PolymarketClient:
                         yes_token = t.get("token_id", t.get("tokenId", ""))
                     elif outcome == "NO":
                         no_token = t.get("token_id", t.get("tokenId", ""))
+        if not (yes_token and no_token):
+            # Gamma shape: clobTokenIds is a bare [Yes, No] id list (or JSON str)
+            ids = market.get("clobTokenIds", [])
+            if isinstance(ids, str):
+                try:
+                    import json
+                    ids = json.loads(ids)
+                except Exception:
+                    ids = []
+            if isinstance(ids, list) and len(ids) >= 2:
+                yes_token = yes_token or str(ids[0])
+                no_token  = no_token  or str(ids[1])
 
         yes_price = self.get_mid_price(yes_token) if yes_token else None
         no_price  = self.get_mid_price(no_token)  if no_token  else None

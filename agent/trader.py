@@ -25,11 +25,34 @@ log = logging.getLogger(__name__)
 
 
 def _token_for_side(market: Dict, side: str) -> str:
-    """Return the YES/NO token id for the given side."""
-    tokens = market.get("tokens", market.get("clobTokenIds", []))
-    for t in (tokens if isinstance(tokens, list) else []):
-        if isinstance(t, dict) and t.get("outcome", "").upper() == side:
-            return t.get("token_id", t.get("tokenId", "")) or ""
+    """Return the YES/NO token id for the given side.
+
+    Handles both market shapes:
+      • `tokens`: a list of dicts each carrying an `outcome` + `token_id`.
+      • `clobTokenIds`: a bare list/JSON-string of ids in outcome order
+        (index 0 = Yes, index 1 = No — the Gamma convention).
+    """
+    side = (side or "").upper()
+    # 1) dict-shaped tokens with explicit outcomes
+    tokens = market.get("tokens")
+    if isinstance(tokens, list):
+        for t in tokens:
+            if isinstance(t, dict) and t.get("outcome", "").upper() == side:
+                return t.get("token_id", t.get("tokenId", "")) or ""
+    # 2) bare clobTokenIds in [Yes, No] order
+    ids = market.get("clobTokenIds", [])
+    if isinstance(ids, str):
+        try:
+            import json
+            ids = json.loads(ids)
+        except Exception:
+            ids = []
+    if isinstance(ids, list) and len(ids) >= 2:
+        idx = 0 if side == "YES" else 1
+        tok = ids[idx]
+        if isinstance(tok, dict):
+            return tok.get("token_id", tok.get("tokenId", "")) or ""
+        return str(tok) if tok else ""
     return ""
 
 
