@@ -25,7 +25,9 @@ AUTO_APPROVE_USDC  = os.getenv("AUTO_APPROVE_USDC", "true").lower() == "true"
 # Redeem winning positions to USDC after a market resolves.
 ENABLE_REDEEM      = os.getenv("ENABLE_REDEEM", "true").lower() == "true"
 # Polygon RPC + contract addresses for on-chain redemption.
-POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://polygon-rpc.com")
+# NOTE: the old default (polygon-rpc.com) now returns 401 without an API key.
+# Use a key-free public RPC by default; override via POLYGON_RPC if you have one.
+POLYGON_RPC  = os.getenv("POLYGON_RPC", "https://polygon-bor-rpc.publicnode.com")
 USDC_ADDRESS = os.getenv("USDC_ADDRESS", "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
 CTF_ADDRESS  = os.getenv("CTF_ADDRESS",  "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
 

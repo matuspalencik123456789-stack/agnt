@@ -40,6 +40,30 @@ _CTF_ABI = [{
     "type": "function",
 }]
 
+# Polymarket Proxy Wallet factory (used by email/Magic logins, signature_type 1).
+# The user's outcome tokens are held by a 1-of-1 proxy the factory deploys via
+# CREATE2 from the owner EOA. To redeem we don't call the CTF directly (the EOA
+# holds nothing) — we call proxy([...]) on the factory FROM the owner EOA, and
+# the factory routes the inner redeemPositions call through the user's proxy.
+PROXY_FACTORY_ADDRESS = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052"
+# ProxyCall = (uint8 typeCode, address to, uint256 value, bytes data); CALL = 1.
+_PROXY_FACTORY_ABI = [{
+    "inputs": [{
+        "components": [
+            {"name": "typeCode", "type": "uint8"},
+            {"name": "to",       "type": "address"},
+            {"name": "value",    "type": "uint256"},
+            {"name": "data",     "type": "bytes"},
+        ],
+        "name": "calls",
+        "type": "tuple[]",
+    }],
+    "name": "proxy",
+    "outputs": [{"name": "returnValues", "type": "bytes[]"}],
+    "stateMutability": "payable",
+    "type": "function",
+}]
+
 
 class PolymarketClient:
     def __init__(self):
@@ -473,12 +497,15 @@ class PolymarketClient:
         Convert a RESOLVED market's winning outcome tokens back into USDC by
         calling redeemPositions on the CTF contract. Returns the tx hash.
 
-        Note on proxy wallets: with signature_type 1/2 the tokens are held by the
-        Polymarket proxy (funder) address, and Polymarket typically AUTO-REDEEMS
-        resolved winnings to your balance — so manual redemption is usually
-        unnecessary there and a direct EOA call would redeem nothing. This path
-        is implemented for EOA-held tokens (signature_type 0) and as an explicit
-        fallback; it no-ops cleanly when web3/key/RPC aren't available.
+        Two paths:
+        • Proxy wallet (email/Magic, signature_type 1/2 with a FUNDER set): the
+          tokens live in the Polymarket proxy, so a direct EOA redeem would burn
+          gas and move nothing. Instead we call proxy([redeemPositions]) on the
+          ProxyWalletFactory FROM the owner EOA; the factory routes the call
+          through the user's proxy, converting the winning tokens to USDC there.
+        • Pure EOA (signature_type 0, no funder): call redeemPositions directly.
+
+        No-ops cleanly when web3/key/RPC aren't available.
         """
         if not self._client or not getattr(config, "ENABLE_REDEEM", True):
             return None
@@ -496,19 +523,44 @@ class PolymarketClient:
             parent = b"\x00" * 32
             cond = condition_id if condition_id.startswith("0x") else "0x" + condition_id
             cond_bytes = bytes.fromhex(cond[2:])
-            fn = ctf.functions.redeemPositions(usdc, parent, cond_bytes, [1, 2])
-            tx = fn.build_transaction({
+
+            funder = (getattr(config, "POLYMARKET_FUNDER", "") or "").strip()
+            base_tx = {
                 "from": acct.address,
                 "nonce": w3.eth.get_transaction_count(acct.address),
-                "gas": 200_000,
                 "maxFeePerGas": w3.to_wei("100", "gwei"),
                 "maxPriorityFeePerGas": w3.to_wei("30", "gwei"),
                 "chainId": 137,
-            })
+            }
+
+            if funder:
+                # Proxy path: wrap redeemPositions in a ProxyCall and route it
+                # through the factory so the user's proxy is the msg.sender.
+                redeem_args = [usdc, parent, cond_bytes, [1, 2]]
+                if hasattr(ctf, "encode_abi"):       # web3.py v7+
+                    redeem_data = ctf.encode_abi("redeemPositions", args=redeem_args)
+                else:                                # web3.py v6
+                    redeem_data = ctf.encodeABI(fn_name="redeemPositions",
+                                                args=redeem_args)
+                factory = w3.eth.contract(
+                    address=Web3.to_checksum_address(PROXY_FACTORY_ADDRESS),
+                    abi=_PROXY_FACTORY_ABI)
+                call = (1, Web3.to_checksum_address(config.CTF_ADDRESS), 0,
+                        Web3.to_bytes(hexstr=redeem_data))
+                fn = factory.functions.proxy([call])
+                base_tx["gas"] = 350_000
+                where = f"proxy {funder[:10]}…"
+            else:
+                # Pure-EOA path: redeem straight on the CTF.
+                fn = ctf.functions.redeemPositions(usdc, parent, cond_bytes, [1, 2])
+                base_tx["gas"] = 200_000
+                where = f"EOA {acct.address[:10]}…"
+
+            tx = fn.build_transaction(base_tx)
             signed = acct.sign_transaction(tx)
             txh = w3.eth.send_raw_transaction(signed.raw_transaction)
-            h = txh.hex()
-            log.info(f"Redeem submitted for condition {cond[:14]}… → tx {h}")
+            h = txh.hex() if hasattr(txh, "hex") else str(txh)
+            log.info(f"Redeem submitted via {where} for condition {cond[:14]}… → tx {h}")
             return h
         except Exception as e:
             log.error(f"redeem_position error: {e}")
