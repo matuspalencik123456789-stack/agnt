@@ -455,6 +455,14 @@ class Trader:
             token_id = _token_for_side(market, signal.direction)
         order_id = self.poly.place_market_order(token_id or "", signal.direction, size_usd, price)
 
+        # In LIVE mode a None order_id means the exchange rejected the order
+        # (e.g. outdated client, insufficient balance). Do NOT record a phantom
+        # position the agent would then try to manage/sell — abort cleanly.
+        if self.poly._client and not order_id:
+            log.error("  Order REJECTED by exchange — trade NOT saved "
+                      "(no phantom position).")
+            return
+
         # window metadata for local paper-mode resolution
         w_start = self._parse_dt(market.get("startDate"))
         w_end   = self._parse_dt(market.get("endDate"))
