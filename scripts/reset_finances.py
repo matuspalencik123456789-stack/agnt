@@ -1,14 +1,13 @@
 """
-Reset finances and anchor P&L to your REAL Polymarket balance.
+Anchor P&L to your REAL Polymarket balance — WITHOUT touching history.
 
-Wipes all recorded trades / candles / snapshots / logs, then reads your live
-USDC balance from Polymarket and stores it as the new BASELINE. From that point
-on, "Session P&L" = (current real balance − baseline), so the numbers reflect
-what actually happened on-chain rather than the sum of local trade records.
+By default this KEEPS all trade history and the learned strategy weights, and
+only records a new BASELINE = your live USDC balance right now. From that point
+"Session P&L" = (current real balance − baseline), reflecting on-chain reality.
 
-    python scripts/reset_finances.py
+    python scripts/reset_finances.py            # keep history, just re-anchor
+    python scripts/reset_finances.py --wipe     # also wipe trades/candles/logs
 
-Safe to run anytime you want a clean slate (e.g. before a fresh live session).
 In paper mode (no private key) the baseline falls back to PAPER_START_BALANCE.
 """
 import sys, os
@@ -23,6 +22,7 @@ from agent.polymarket_client import PolymarketClient
 
 
 def main():
+    wipe = "--wipe" in sys.argv
     init_db()
 
     # 1) read the REAL Polymarket balance (live), or paper bankroll as fallback
@@ -34,30 +34,33 @@ def main():
         balance = float(config.PAPER_START_BALANCE)
         source = "paper start balance (no private key set)"
 
-    # 2) wipe all recorded data for a clean slate
-    session = get_session()
-    try:
-        counts = {
-            "trades":           session.query(Trade).delete(),
-            "strategy_weights": session.query(StrategyWeight).delete(),
-            "candles":          session.query(BTCCandle).delete(),
-            "snapshots":        session.query(MarketSnapshot).delete(),
-            "logs":             session.query(AgentLog).delete(),
-        }
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        print(f"❌ Error wiping data: {e}")
-        return
-    finally:
-        session.close()
+    # 2) optionally wipe data — only when explicitly asked
+    if wipe:
+        session = get_session()
+        try:
+            counts = {
+                "trades":           session.query(Trade).delete(),
+                "strategy_weights": session.query(StrategyWeight).delete(),
+                "candles":          session.query(BTCCandle).delete(),
+                "snapshots":        session.query(MarketSnapshot).delete(),
+                "logs":             session.query(AgentLog).delete(),
+            }
+            session.commit()
+            print("🧹 Wiped:")
+            for k, v in counts.items():
+                print(f"   - {k}: {v} rows deleted")
+        except Exception as e:
+            session.rollback()
+            print(f"❌ Error wiping data: {e}")
+            return
+        finally:
+            session.close()
+    else:
+        print("📚 Keeping trade history and strategy weights (no --wipe).")
 
     # 3) anchor the baseline to the real balance
     set_baseline(balance, note=source)
 
-    print("🧹 Finances reset:")
-    for k, v in counts.items():
-        print(f"   - {k}: {v} rows deleted")
     print(f"\n💰 Baseline set to ${balance:.2f}  ({source})")
     print("   Session P&L will now be measured from this point.")
     print("\n✅ Start trading with:")
