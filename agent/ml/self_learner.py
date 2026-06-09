@@ -95,14 +95,25 @@ class SelfLearner:
                     strategy_stats[name]["total"]     += w
                     strategy_stats[name]["total_roi"] += w * roi
 
+            # Minimum effective trades a strategy must have before its weight is
+            # updated from history. Strategies that appear too rarely are held at
+            # their current (default) weight rather than getting a spuriously high
+            # weight from a handful of lucky signal appearances.
+            min_trades_for_weight = int(getattr(config, "MIN_TRADES_FOR_WEIGHT", 10))
+
             for name, stats in strategy_stats.items():
                 if stats["total"] == 0:
                     continue
                 win_rate = stats["wins"] / stats["total"]
                 avg_roi  = stats["total_roi"] / stats["total"]
-                # weight emphasises directional accuracy vs a coin-flip baseline
                 max_w = float(getattr(config, "STRATEGY_MAX_WEIGHT", 4.0))
                 new_weight = max(0.1, min(max_w, (win_rate / 0.5) * (1 + avg_roi / 200)))
+
+                # Don't promote a strategy on too few data points — keep default.
+                if stats["total"] < min_trades_for_weight:
+                    log.info(f"  {name}: only {stats['total']:.0f} weighted trades "
+                             f"(< {min_trades_for_weight}) — holding default weight")
+                    continue
 
                 row = session.query(StrategyWeight).filter_by(name=name).first()
                 if not row:
@@ -158,10 +169,11 @@ class SelfLearner:
         """
         session = get_session()
         try:
-            # 1. Always update the ensemble's own track record.
-            self._update_one(session, "ensemble", won, roi_pct)
-
-            # 2. Credit/blame each sub-strategy by directional correctness.
+            # Credit/blame each sub-strategy by directional correctness.
+            # We do NOT track "ensemble" as a strategy — it is the decision layer,
+            # not a signal. Storing its win-rate as a weight caused a feedback loop
+            # where the ensemble's own aggregate result was fed back into the weight
+            # table, polluting the dashboard and confusing the self-learner.
             sub = (signal_data or {}).get("sub", {})
             if (not is_early_exit) and sub and resolution in ("YES", "NO"):
                 for name, info in sub.items():

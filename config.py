@@ -181,6 +181,10 @@ STRATEGY_MAX_WEIGHT      = float(os.getenv("STRATEGY_MAX_WEIGHT", "4.0"))
 LEARNING_RATE         = float(os.getenv("LEARNING_RATE", "0.08"))
 MIN_TRADES_TO_LEARN   = int(os.getenv("MIN_TRADES_TO_LEARN", "8"))
 STRATEGY_DECAY        = float(os.getenv("STRATEGY_DECAY", "0.99"))  # older trades matter less
+# A strategy must have appeared in at least this many resolved trades before its
+# weight is updated from history. Prevents a strategy that appeared in just a
+# handful of trades (e.g. VWAP) from getting an inflated weight.
+MIN_TRADES_FOR_WEIGHT = int(os.getenv("MIN_TRADES_FOR_WEIGHT", "10"))
 
 # ── Calibration / adaptive market anchoring ───────────────────────────────────
 # The agent tracks how well-calibrated its probability is (Brier score) vs simply
