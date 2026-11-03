@@ -29,9 +29,10 @@ dl() {
 main() {
   COMFY="${1:-$HOME/ComfyUI}"
   COMFY="${COMFY%/}"
-  if [[ ! -f "$COMFY/main.py" ]]; then
+  # Manuálna inštalácia má main.py; ComfyUI Desktop app má v base path len models/, user/, .venv ...
+  if [[ ! -f "$COMFY/main.py" && ! -d "$COMFY/models" ]]; then
     echo "Nenašiel som ComfyUI v: $COMFY"
-    echo "Spusti: bash $0 /cesta/k/ComfyUI   (priečinok, kde je main.py)"
+    echo "Spusti: bash $0 /cesta/k/ComfyUI   (priečinok, v ktorom je models/)"
     exit 1
   fi
   echo "ComfyUI: $COMFY"
@@ -55,9 +56,18 @@ main() {
   echo "✓ workflowy uložené do $wf"
 
   echo
-  echo "Hotovo. Spusti ComfyUI:"
-  echo "  cd \"$COMFY\" && source .venv/bin/activate && python main.py"
-  echo "a otvor http://127.0.0.1:8188  → panel Workflows (klávesa W) → modelka_telo+tvar_16GB"
+  start_hint
+}
+
+start_hint() {
+  if [[ -f "$COMFY/main.py" ]]; then
+    echo "Hotovo. Spusti ComfyUI:"
+    echo "  cd \"$COMFY\" && source .venv/bin/activate && python main.py"
+    echo "a otvor http://127.0.0.1:8188  → panel Workflows (klávesa W) → modelka_telo+tvar_16GB"
+  else
+    echo "Hotovo. Toto je priečinok ComfyUI Desktop aplikácie:"
+    echo "  zatvor a znova otvor aplikáciu ComfyUI → panel Workflows (klávesa W) → modelka_telo+tvar_16GB"
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
