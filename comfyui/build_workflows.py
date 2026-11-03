@@ -258,8 +258,8 @@ NOTE_01 = """# Fúzia: TELO z fotky 1 + TVÁR z fotky 2
 |---|---|
 | [flux-2-klein-4b.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors) (7.8 GB, bf16 – odporúčané na Mac) | `models/diffusion_models/` |
 | alternatíva: [flux-2-klein-4b-fp8.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors) (4.1 GB, pre 16 GB Mac) | `models/diffusion_models/` |
-| [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | `models/text_encoders/` |
-| [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors) | `models/vae/` |
+| [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | `models/text_encoders/` |
+| [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors) | `models/vae/` |
 | [bfs_head_v1_flux-klein_4b.safetensors](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors) | `models/loras/` |
 
 Tvoj `flux1-dev-fp8` + `clip_l` + `t5xxl` + `ae` sa tu **nepoužívajú** (Flux.1 ≠ Flux.2).
@@ -275,6 +275,13 @@ Tvoj `flux1-dev-fp8` + `clip_l` + `t5xxl` + `ae` sa tu **nepoužívajú** (Flux.
 Používaj len tváre, na ktoré máš súhlas (vlastná AI postava, ty, osoba so súhlasom).
 Žiadne verejne známe osoby, žiadne intímne zábery reálnych ľudí. Klein 4B je Apache-2.0 (komerčne OK),
 BFS LoRA je MIT.
+"""
+
+NOTE_16GB = """# ⚠️ Verzia pre Mac so 16 GB RAM
+- Model: **flux-2-klein-4b-fp8.safetensors** (4.1 GB), fotky zmenšené na **0.75 MP**.
+- Pred spustením zavri Chrome/Safari s veľa kartami a ostatné ťažké aplikácie.
+- Pri chybe *MPS backend out of memory* daj v oboch „→ 0.75 MP“ uzloch 0.6.
+
 """
 
 NOTE_02 = """# Záložný workflow: ReActor + Flux.1 dev doladenie
@@ -296,10 +303,10 @@ Kvalitou je pod workflow 01 (inswapper má rozlíšenie tváre len 128 px), ale 
 """
 
 
-def build_01():
+def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None):
     g = Graph()
     # --- models
-    unet = g.add("UNETLoader", {"unet_name": "flux-2-klein-4b.safetensors", "weight_dtype": "default"},
+    unet = g.add("UNETLoader", {"unet_name": unet_name, "weight_dtype": "default"},
                  pos=(0, 0), size=(360, 90), title="Model: FLUX.2 Klein 4B")
     lora = g.add("LoraLoaderModelOnly", {"lora_name": "bfs_head_v1_flux-klein_4b.safetensors",
                                          "strength_model": 1.0},
@@ -315,12 +322,12 @@ def build_01():
                  title="FOTKA 1 – TELO (póza, oblečenie, pozadie)", color="#232", bgcolor="#353")
     face = g.add("LoadImage", {"image": "tvar.png"}, pos=(460, 480), size=(340, 420),
                  title="FOTKA 2 – TVÁR / HLAVA (identita)", color="#223", bgcolor="#335")
-    body_s = g.add("ImageScaleToTotalPixels", {"upscale_method": "lanczos", "megapixels": 1.0,
+    body_s = g.add("ImageScaleToTotalPixels", {"upscale_method": "lanczos", "megapixels": mp,
                                                "resolution_steps": 16},
-                   pos=(860, 0), size=(300, 110), title="Telo → 1 MP", image=(body, 0))
-    face_s = g.add("ImageScaleToTotalPixels", {"upscale_method": "lanczos", "megapixels": 1.0,
+                   pos=(860, 0), size=(300, 110), title=f"Telo → {mp:g} MP", image=(body, 0))
+    face_s = g.add("ImageScaleToTotalPixels", {"upscale_method": "lanczos", "megapixels": mp,
                                                "resolution_steps": 16},
-                   pos=(860, 480), size=(300, 110), title="Tvár → 1 MP", image=(face, 0))
+                   pos=(860, 480), size=(300, 110), title=f"Tvár → {mp:g} MP", image=(face, 0))
     size = g.add("GetImageSize", {}, pos=(860, 170), size=(300, 90), title="Rozmer výstupu = rozmer tela",
                  image=(body_s, 0))
     body_l = g.add("VAEEncode", {}, pos=(860, 320), size=(300, 50), title="Encode telo",
@@ -372,7 +379,7 @@ def build_01():
                  images=(stitch, 0))
     g.group("5 · Výstup", [save, stitch, prev], GREY)
 
-    g.add("MarkdownNote", {"text": NOTE_01}, pos=(0, 1020), size=(1160, 900), title="NÁVOD (čítaj prvé)",
+    g.add("MarkdownNote", {"text": note or NOTE_01}, pos=(0, 1020), size=(1160, 900), title="NÁVOD (čítaj prvé)",
           color="#432", bgcolor="#653")
     return g
 
@@ -426,8 +433,12 @@ def build_02():
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
-    for name, builder in [("01_modelka_telo+tvar_flux2klein_BFS", build_01),
-                          ("02_modelka_telo+tvar_reactor_zaloha", build_02)]:
+    for name, builder in [
+        ("01_modelka_telo+tvar_flux2klein_BFS_16GB",
+         lambda: build_01("flux-2-klein-4b-fp8.safetensors", 0.75, NOTE_16GB + NOTE_01)),
+        ("01_modelka_telo+tvar_flux2klein_BFS", build_01),
+        ("02_modelka_telo+tvar_reactor_zaloha", build_02),
+    ]:
         g = builder()
         with open(os.path.join(OUT_DIR, name + ".json"), "w", encoding="utf-8") as f:
             json.dump(g.ui_json(), f, ensure_ascii=False, indent=1)
