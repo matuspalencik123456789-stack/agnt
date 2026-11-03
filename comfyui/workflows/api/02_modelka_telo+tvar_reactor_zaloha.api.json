@@ -1,0 +1,185 @@
+{
+ "1": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "telo.png"
+  },
+  "_meta": {
+   "title": "FOTKA 1 – TELO"
+  }
+ },
+ "2": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "tvar.png"
+  },
+  "_meta": {
+   "title": "FOTKA 2 – TVÁR"
+  }
+ },
+ "3": {
+  "class_type": "ReActorFaceSwap",
+  "inputs": {
+   "enabled": true,
+   "swap_model": "inswapper_128.onnx",
+   "facedetection": "retinaface_resnet50",
+   "face_restore_model": "none",
+   "face_restore_visibility": 0.7,
+   "codeformer_weight": 0.5,
+   "detect_gender_input": "no",
+   "detect_gender_source": "no",
+   "input_faces_index": "0",
+   "source_faces_index": "0",
+   "console_log_level": 1,
+   "input_image": [
+    "1",
+    0
+   ],
+   "source_image": [
+    "2",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "ReActor face swap"
+  }
+ },
+ "4": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "flux1-dev-fp8.safetensors",
+   "weight_dtype": "default"
+  },
+  "_meta": {
+   "title": "Flux.1 dev (tvoj model)"
+  }
+ },
+ "5": {
+  "class_type": "DualCLIPLoader",
+  "inputs": {
+   "clip_name1": "clip_l.safetensors",
+   "clip_name2": "t5xxl_fp8_e4m3fn.safetensors",
+   "type": "flux",
+   "device": "default"
+  }
+ },
+ "6": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "ae.safetensors"
+  }
+ },
+ "7": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "photo of a woman, natural skin texture with pores, sharp focus, realistic lighting, high detail",
+   "clip": [
+    "5",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Prompt doladenia"
+  }
+ },
+ "8": {
+  "class_type": "FluxGuidance",
+  "inputs": {
+   "guidance": 2.5,
+   "conditioning": [
+    "7",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "ConditioningZeroOut",
+  "inputs": {
+   "conditioning": [
+    "7",
+    0
+   ]
+  }
+ },
+ "10": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "3",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "11": {
+  "class_type": "KSampler",
+  "inputs": {
+   "seed": 20261103,
+   "steps": 20,
+   "cfg": 1.0,
+   "sampler_name": "euler",
+   "scheduler": "beta",
+   "denoise": 0.2,
+   "model": [
+    "4",
+    0
+   ],
+   "positive": [
+    "8",
+    0
+   ],
+   "negative": [
+    "9",
+    0
+   ],
+   "latent_image": [
+    "10",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Doladenie (denoise 0.15–0.30)"
+  }
+ },
+ "12": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "11",
+    0
+   ],
+   "vae": [
+    "6",
+    0
+   ]
+  }
+ },
+ "13": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "filename_prefix": "modelka/reactor",
+   "images": [
+    "12",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VÝSLEDOK"
+  }
+ },
+ "14": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Surový swap (bez doladenia)"
+  }
+ }
+}
