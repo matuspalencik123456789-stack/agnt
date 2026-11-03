@@ -2,12 +2,38 @@
 
 | Súbor | Kedy použiť |
 |---|---|
-| `workflows/01_modelka_telo+tvar_flux2klein_BFS.json` | **Hlavný.** Najlepšia kvalita podľa komunity v roku 2026. Len core uzly. |
+| `workflows/01_modelka_telo+tvar_flux2klein_BFS_16GB.json` | **Hlavný pre Mac so 16 GB.** fp8 model, fotky 0.75 MP. |
+| `workflows/01_modelka_telo+tvar_flux2klein_BFS.json` | To isté pre 24 GB+ (bf16 model, 1 MP). Len core uzly. |
+| `stiahni_modely_mac.sh` | Stiahne modely do správnych priečinkov a vloží workflowy do ComfyUI. |
 | `workflows/02_modelka_telo+tvar_reactor_zaloha.json` | Záloha s modelmi, ktoré už máš (ReActor + Flux.1 dev). Slabšia kvalita, licencia len nekomerčná. |
 | `workflows/api/*.api.json` | Na skriptovanie cez `/prompt` API. Do UI ich nepreťahuj. |
 | `build_workflows.py` | Generátor. Po úprave spusti `python3 comfyui/build_workflows.py`. |
 
 Do ComfyUI: pretiahni `.json` (bez `.api`) do okna prehliadača.
+
+## Spustenie na Macu so 16 GB RAM (krok za krokom)
+
+1. Stiahni skript (Terminal):
+   ```bash
+   curl -L -o ~/stiahni_modely_mac.sh https://raw.githubusercontent.com/matuspalencik123456789-stack/agnt/claude/lucid-goldberg-86v1xi/comfyui/stiahni_modely_mac.sh
+   ```
+2. Spusti ho s cestou k ComfyUI (priečinok, v ktorom je `main.py`). Stiahne ~12.8 GB a vloží workflowy do ComfyUI:
+   ```bash
+   bash ~/stiahni_modely_mac.sh ~/ComfyUI
+   ```
+3. Spusti ComfyUI:
+   ```bash
+   cd ~/ComfyUI && source .venv/bin/activate && python main.py
+   ```
+4. Otvor http://127.0.0.1:8188 → klávesa **W** (panel Workflows) → **modelka_telo+tvar_16GB**.
+5. Uzol **FOTKA 1 – TELO** → *choose file to upload* → fotka s telom. Uzol **FOTKA 2 – TVÁR** → fotka tváre.
+6. **Run** (alebo Cmd+Enter). Prvé spustenie trvá dlhšie, lebo sa načítavajú modely.
+   Výsledok je v `ComfyUI/output/modelka/`.
+
+Keď niečo nejde:
+- **Červený uzol / „Value not in list“** → súbor nie je v správnom priečinku alebo má iný názov. Stlač **R** (refresh) alebo reštartuj ComfyUI.
+- **„MPS backend out of memory“** → v uzloch „→ 0.75 MP“ daj 0.6 a zavri ostatné aplikácie. Až potom skús
+  `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 python main.py`. Pozor: táto premenná vypne limit pamäte a Mac môže zamrznúť.
 
 ## 01 – FLUX.2 Klein 4B + BFS Head Swap LoRA
 
@@ -21,8 +47,8 @@ preberie z fotky 1. Tvár, vlasy, farbu očí a nos preberie z fotky 2.
 |---|---|---|
 | [flux-2-klein-4b.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors) (bf16, odporúčané na Mac) | 7.8 GB | `diffusion_models/` |
 | alebo [flux-2-klein-4b-fp8.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors) (pri 16 GB RAM) | 4.1 GB | `diffusion_models/` |
-| [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/z_image_turbo/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | ~8 GB | `text_encoders/` |
-| [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/flux2-dev/resolve/main/split_files/vae/flux2-vae.safetensors) | ~0.3 GB | `vae/` |
+| [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | ~8 GB | `text_encoders/` |
+| [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors) | ~0.3 GB | `vae/` |
 | [bfs_head_v1_flux-klein_4b.safetensors](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors) | malý | `loras/` |
 
 Ak použiješ fp8 súbor, prepni ho v uzle *Model: FLUX.2 Klein 4B*.
