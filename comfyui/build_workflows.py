@@ -256,8 +256,8 @@ NOTE_01 = """# Fúzia: TELO z fotky 1 + TVÁR z fotky 2
 ## Modely (stiahnuť raz)
 | Súbor | Priečinok |
 |---|---|
-| [flux-2-klein-4b.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors) (7.8 GB, bf16 – odporúčané na Mac) | `models/diffusion_models/` |
-| alternatíva: [flux-2-klein-4b-fp8.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors) (4.1 GB, pre 16 GB Mac) | `models/diffusion_models/` |
+| [flux-2-klein-4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors) (7.8 GB, bf16 – odporúčané na Mac) | `models/diffusion_models/` |
+| ⚠️ `flux-2-klein-4b-fp8` na Macu **nepoužívaj** – s LoRA padá (MPS nevie fp8) | – |
 | [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | `models/text_encoders/` |
 | [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors) | `models/vae/` |
 | [bfs_head_v1_flux-klein_4b.safetensors](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors) | `models/loras/` |
@@ -278,7 +278,8 @@ BFS LoRA je MIT.
 """
 
 NOTE_16GB = """# ⚠️ Verzia pre Mac so 16 GB RAM
-- Model: **flux-2-klein-4b-fp8.safetensors** (4.1 GB), fotky zmenšené na **0.75 MP**.
+- Model: **flux-2-klein-4b.safetensors** (bf16, 7.8 GB), fotky zmenšené na **0.75 MP**.
+- fp8 verzia na Macu padá (*Float8_e4m3fn … MPS*), nepoužívaj ju.
 - Pred spustením zavri Chrome/Safari s veľa kartami a ostatné ťažké aplikácie.
 - Pri chybe *MPS backend out of memory* daj v oboch „→ 0.75 MP“ uzloch 0.6.
 
@@ -435,7 +436,7 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     for name, builder in [
         ("01_modelka_telo+tvar_flux2klein_BFS_16GB",
-         lambda: build_01("flux-2-klein-4b-fp8.safetensors", 0.75, NOTE_16GB + NOTE_01)),
+         lambda: build_01("flux-2-klein-4b.safetensors", 0.75, NOTE_16GB + NOTE_01)),
         ("01_modelka_telo+tvar_flux2klein_BFS", build_01),
         ("02_modelka_telo+tvar_reactor_zaloha", build_02),
     ]:

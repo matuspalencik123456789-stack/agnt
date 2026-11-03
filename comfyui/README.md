@@ -2,7 +2,7 @@
 
 | Súbor | Kedy použiť |
 |---|---|
-| `workflows/01_modelka_telo+tvar_flux2klein_BFS_16GB.json` | **Hlavný pre Mac so 16 GB.** fp8 model, fotky 0.75 MP. |
+| `workflows/01_modelka_telo+tvar_flux2klein_BFS_16GB.json` | **Hlavný pre Mac so 16 GB.** bf16 model, fotky 0.75 MP. |
 | `workflows/01_modelka_telo+tvar_flux2klein_BFS.json` | To isté pre 24 GB+ (bf16 model, 1 MP). Len core uzly. |
 | `stiahni_modely_mac.sh` | Stiahne modely do správnych priečinkov a vloží workflowy do ComfyUI. |
 | `workflows/02_modelka_telo+tvar_reactor_zaloha.json` | Záloha s modelmi, ktoré už máš (ReActor + Flux.1 dev). Slabšia kvalita, licencia len nekomerčná. |
@@ -17,7 +17,7 @@ Do ComfyUI: pretiahni `.json` (bez `.api`) do okna prehliadača.
    ```bash
    curl -L -o ~/stiahni_modely_mac.sh https://raw.githubusercontent.com/matuspalencik123456789-stack/agnt/claude/lucid-goldberg-86v1xi/comfyui/stiahni_modely_mac.sh
    ```
-2. Spusti ho s cestou k ComfyUI (priečinok, v ktorom je `main.py`). Stiahne ~12.8 GB a vloží workflowy do ComfyUI:
+2. Spusti ho s cestou k ComfyUI (priečinok, v ktorom je `main.py`). Stiahne ~16.5 GB a vloží workflowy do ComfyUI:
    ```bash
    bash ~/stiahni_modely_mac.sh ~/ComfyUI
    ```
@@ -45,13 +45,12 @@ preberie z fotky 1. Tvár, vlasy, farbu očí a nos preberie z fotky 2.
 
 | Súbor | Veľkosť | Priečinok v `ComfyUI/models/` |
 |---|---|---|
-| [flux-2-klein-4b.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/main/flux-2-klein-4b.safetensors) (bf16, odporúčané na Mac) | 7.8 GB | `diffusion_models/` |
-| alebo [flux-2-klein-4b-fp8.safetensors](https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors) (pri 16 GB RAM) | 4.1 GB | `diffusion_models/` |
+| [flux-2-klein-4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors) (bf16, odporúčané na Mac) | 7.8 GB | `diffusion_models/` |
 | [qwen_3_4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors) | ~8 GB | `text_encoders/` |
 | [flux2-vae.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors) | ~0.3 GB | `vae/` |
 | [bfs_head_v1_flux-klein_4b.safetensors](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors) | malý | `loras/` |
 
-Ak použiješ fp8 súbor, prepni ho v uzle *Model: FLUX.2 Klein 4B*.
+Verziu `flux-2-klein-4b-fp8` na Macu nepoužívaj, pozri sekciu Mac nižšie.
 
 ### Nastavenia (z oficiálnej šablóny ComfyUI pre Klein 4B distilled)
 - 4 kroky, `euler`, CFG 1.0, negatív `ConditioningZeroOut`.
@@ -65,7 +64,7 @@ Ak použiješ fp8 súbor, prepni ho v uzle *Model: FLUX.2 Klein 4B*.
 | Mení sa telo / oblečenie / pozadie | LoRA 0.8–0.9 |
 | Zlý výraz tváre | doplň do promptu napr. `smiling softly, mouth closed` |
 | Viditeľný šev na krku / iný tón pleti | vyber fotku 2 s podobným svetlom; skús iný seed |
-| Málo RAM / pády na Macu | fp8 súbor; `megapixels` 0.75 v oboch „→ 1 MP“ uzloch |
+| Málo RAM / pády na Macu | zavri ostatné aplikácie; `megapixels` 0.6 v oboch „→ MP“ uzloch |
 
 ### Fotky – čo funguje najlepšie
 - **Fotka 1 (telo):** tvár je viditeľná a nie je príliš malá (polcelok je lepší než celá postava z diaľky).
@@ -78,10 +77,11 @@ generuje tvár len v 128 px a výsledok je rozmazaný. Použi ho, kým nemáš s
 alebo ako „identity lock“ na výsledok z 01.
 
 ## Mac (Apple Silicon) – na čo myslieť
-- Na MPS nie je natívny výpočet vo fp8. ComfyUI fp8 váhy buď prevedie na fp16/bf16 (ak je dosť pamäte),
-  alebo ich nechá vo fp8 a prevádza po vrstvách. Na Macu teda fp8 neušetrí toľko ako na NVIDIA. Preto je odporúčaný bf16 súbor.
-- Klein 4B + Qwen3 4B potrebujú spolu ~16 GB váh. Pri 16 GB RAM to pôjde pomaly so swapom,
-  od 24 GB rozumne, od 32 GB pohodlne.
+- **fp8 model na Macu s LoRA padá** (overené na M-series, ComfyUI 0.44.0, PyTorch 2.10):
+  `TypeError: Trying to convert Float8_e4m3fn to the MPS backend`. Pri aplikovaní LoRA ComfyUI presunie
+  fp8 váhy na MPS a až tam ich prevádza. MPS fp8 nepodporuje. Používaj bf16 súbor `flux-2-klein-4b.safetensors`.
+- Klein 4B (bf16, 7.8 GB) + Qwen3 4B (v pamäti ~7.7 GB) ≈ 15.5 GB. Pri 16 GB RAM bude Mac swapovať na disk.
+  Pôjde to, ale pomalšie. Od 24 GB rozumne, od 32 GB pohodlne.
 - Väčšia verzia Klein 9B (`bfs_head_v1_flux-klein_9b_*`) dáva lepšie výsledky, ale potrebuje ~2× viac pamäte
   a jej licencia je nekomerčná.
 

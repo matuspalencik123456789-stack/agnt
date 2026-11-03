@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stiahne modely + workflow pre "telo z fotky 1 + tvár z fotky 2" (FLUX.2 Klein 4B + BFS)
-# do existujúcej inštalácie ComfyUI. Verzia pre Mac so 16 GB RAM (fp8 model).
+# do existujúcej inštalácie ComfyUI. Verzia pre Mac (bf16 model – fp8 na Macu s LoRA padá).
 #
 # Použitie:  bash stiahni_modely_mac.sh /cesta/k/ComfyUI
 # Bez argumentu skúsi ~/ComfyUI. Prerušené sťahovanie sa pri ďalšom spustení dokončí.
@@ -37,8 +37,8 @@ main() {
   fi
   echo "ComfyUI: $COMFY"
 
-  dl diffusion_models flux-2-klein-4b-fp8.safetensors 4070624520 \
-    "https://huggingface.co/black-forest-labs/FLUX.2-klein-4b-fp8/resolve/main/flux-2-klein-4b-fp8.safetensors"
+  dl diffusion_models flux-2-klein-4b.safetensors 7751105712 \
+    "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors"
   dl text_encoders qwen_3_4b.safetensors 8044982048 \
     "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors"
   dl vae flux2-vae.safetensors 336211292 \
@@ -55,6 +55,11 @@ main() {
     "$BRANCH_RAW/02_modelka_telo%2Btvar_reactor_zaloha.json"
   echo "✓ workflowy uložené do $wf"
 
+  if [[ -f "$COMFY/models/diffusion_models/flux-2-klein-4b-fp8.safetensors" ]]; then
+    echo
+    echo "Tip: fp8 verzia na Macu nefunguje. Keď ti workflow pobeží, môžeš ju zmazať (uvoľní 4 GB):"
+    echo "  rm \"$COMFY/models/diffusion_models/flux-2-klein-4b-fp8.safetensors\""
+  fi
   echo
   start_hint
 }
