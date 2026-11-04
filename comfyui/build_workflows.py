@@ -238,8 +238,12 @@ BFS_PROMPT = (
     "background. remove the head from Picture 1 completely and replace it with the head from "
     "Picture 2, strictly preserving the hair, eye color, and nose structure of Picture 2. copy the "
     "direction of the eye, head rotation, and micro-expressions from Picture 1. Keep the body, "
-    "clothing, pose, framing, and background intact. high quality, sharp details, natural skin "
-    "texture."
+    "clothing, pose, framing, and background intact.\n\n"
+    "The final image is a real, unretouched photograph of a real person, shot on a full-frame camera "
+    "with a 50mm lens. Natural skin texture with visible pores, fine facial hair, slight skin "
+    "unevenness and natural shine, individual strands of hair, realistic eyes with natural "
+    "catchlights. The skin tone and lighting on the face match the neck and body exactly. Sharp "
+    "focus, true-to-life colors, subtle film grain."
 )
 
 NOTE_01 = """# Fúzia: TELO z fotky 1 + TVÁR z fotky 2
