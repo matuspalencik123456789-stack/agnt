@@ -5,6 +5,7 @@
 | `workflows/01_modelka_telo+tvar_flux2klein_BFS_16GB.json` | **Hlavný pre Mac so 16 GB.** bf16 model, fotky 0.75 MP. |
 | `workflows/01_modelka_telo+tvar_flux2klein_BFS.json` | To isté pre 24 GB+ (bf16 model, 1 MP). Len core uzly. |
 | `stiahni_modely_mac.sh` | Stiahne modely do správnych priečinkov a vloží workflowy do ComfyUI. |
+| `workflows/03_modelka_telo+tvar_flux2klein_BASE_realisticka_16GB.json` | **Najrealistickejší.** Klein 4B *base*: CFG 4, 20 krokov, funkčný negatívny prompt. ~10× pomalší než 01. |
 | `workflows/02_modelka_telo+tvar_reactor_zaloha.json` | Záloha s modelmi, ktoré už máš (ReActor + Flux.1 dev). Slabšia kvalita, licencia len nekomerčná. |
 | `workflows/api/*.api.json` | Na skriptovanie cez `/prompt` API. Do UI ich nepreťahuj. |
 | `build_workflows.py` | Generátor. Po úprave spusti `python3 comfyui/build_workflows.py`. |
@@ -70,6 +71,17 @@ Verziu `flux-2-klein-4b-fp8` na Macu nepoužívaj, pozri sekciu Mac nižšie.
 - **Fotka 1 (telo):** tvár je viditeľná a nie je príliš malá (polcelok je lepší než celá postava z diaľky).
 - **Fotka 2 (tvár):** ostrá, rovnomerné svetlo, bez okuliarov a rúk pred tvárou, podobný uhol hlavy ako na fotke 1.
 - Na konzistentnú AI modelku používaj stále tú istú fotku 2. Najlepšie je vygenerovať si vlastnú AI tvár.
+
+## 03 – realistická verzia (Klein 4B base)
+Stiahnutie modelu navyše (+7.8 GB). Na konci je slovo `base`:
+```bash
+bash ~/stiahni_modely_mac.sh /cesta/k/ComfyUI base
+```
+- Rovnaké zapojenie ako 01, iba namiesto destilovaného modelu je `flux-2-klein-base-4b.safetensors`,
+  20 krokov, CFG 4 a skutočný negatívny prompt (cartoon, anime, plastic skin …).
+- Base pri CFG > 1 počíta pri každom kroku dva prechody modelom, teda 20 krokov ≈ 10× dlhšie než 4 kroky v 01.
+  Kompozíciu a seed si nájdi v 01, finálny obrázok sprav v 03.
+- CFG 3–3.5 = prirodzenejšie farby, 5 = presnejšie podľa promptu.
 
 ## 02 – záloha: ReActor (inswapper_128) + Flux.1 dev doladenie
 ReActor vymení tvár. Potom Flux.1 dev pri denoise 0.20 vráti textúru pokožky, lebo inswapper

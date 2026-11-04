@@ -1,0 +1,381 @@
+{
+ "1": {
+  "class_type": "UNETLoader",
+  "inputs": {
+   "unet_name": "flux-2-klein-base-4b.safetensors",
+   "weight_dtype": "default"
+  },
+  "_meta": {
+   "title": "Model: FLUX.2 Klein 4B BASE (nedestilovaný)"
+  }
+ },
+ "2": {
+  "class_type": "LoraLoaderModelOnly",
+  "inputs": {
+   "lora_name": "bfs_head_v1_flux-klein_4b.safetensors",
+   "strength_model": 1.0,
+   "model": [
+    "1",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "BFS Head Swap LoRA (sila 0.8–1.3)"
+  }
+ },
+ "3": {
+  "class_type": "CLIPLoader",
+  "inputs": {
+   "clip_name": "qwen_3_4b.safetensors",
+   "type": "flux2",
+   "device": "default"
+  },
+  "_meta": {
+   "title": "Text encoder: Qwen3 4B"
+  }
+ },
+ "4": {
+  "class_type": "VAELoader",
+  "inputs": {
+   "vae_name": "flux2-vae.safetensors"
+  },
+  "_meta": {
+   "title": "VAE: Flux 2"
+  }
+ },
+ "5": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "telo.png"
+  },
+  "_meta": {
+   "title": "FOTKA 1 – TELO (póza, oblečenie, pozadie)"
+  }
+ },
+ "6": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "tvar.png"
+  },
+  "_meta": {
+   "title": "FOTKA 2 – TVÁR / HLAVA (identita)"
+  }
+ },
+ "7": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "upscale_method": "lanczos",
+   "megapixels": 0.75,
+   "resolution_steps": 16,
+   "image": [
+    "5",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Telo → 0.75 MP"
+  }
+ },
+ "8": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "upscale_method": "lanczos",
+   "megapixels": 0.75,
+   "resolution_steps": 16,
+   "image": [
+    "6",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Tvár → 0.75 MP"
+  }
+ },
+ "9": {
+  "class_type": "GetImageSize",
+  "inputs": {
+   "image": [
+    "7",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Rozmer výstupu = rozmer tela"
+  }
+ },
+ "10": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "7",
+    0
+   ],
+   "vae": [
+    "4",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Encode telo"
+  }
+ },
+ "11": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "8",
+    0
+   ],
+   "vae": [
+    "4",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Encode tvár"
+  }
+ },
+ "12": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "head_swap: start with Picture 1 as the base image, keeping its lighting, environment, and background. remove the head from Picture 1 completely and replace it with the head from Picture 2, strictly preserving the hair, eye color, and nose structure of Picture 2. copy the direction of the eye, head rotation, and micro-expressions from Picture 1. Keep the body, clothing, pose, framing, and background intact.\n\nThe final image is a real, unretouched photograph of a real person, shot on a full-frame camera with a 50mm lens. Natural skin texture with visible pores, fine facial hair, slight skin unevenness and natural shine, individual strands of hair, realistic eyes with natural catchlights. The skin tone and lighting on the face match the neck and body exactly. Sharp focus, true-to-life colors, subtle film grain.",
+   "clip": [
+    "3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Prompt (BFS head_swap – nemeň začiatok)"
+  }
+ },
+ "13": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "text": "cartoon, anime, illustration, drawing, painting, 3d render, cgi, digital art, plastic skin, airbrushed skin, overly smooth skin, wax figure, doll face, oversaturated colors, harsh contrast, blurry, low quality, jpeg artifacts, deformed face, asymmetric eyes, visible seam on the neck",
+   "clip": [
+    "3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Negatívny prompt (čo NECHCEŠ vidieť)"
+  }
+ },
+ "14": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "12",
+    0
+   ],
+   "latent": [
+    "10",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "+ Picture 1 (telo)"
+  }
+ },
+ "15": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "14",
+    0
+   ],
+   "latent": [
+    "11",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "+ Picture 2 (tvár)"
+  }
+ },
+ "16": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "13",
+    0
+   ],
+   "latent": [
+    "10",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "neg + Picture 1"
+  }
+ },
+ "17": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "16",
+    0
+   ],
+   "latent": [
+    "11",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "neg + Picture 2"
+  }
+ },
+ "18": {
+  "class_type": "EmptyFlux2LatentImage",
+  "inputs": {
+   "width": [
+    "9",
+    0
+   ],
+   "height": [
+    "9",
+    1
+   ],
+   "batch_size": 1
+  },
+  "_meta": {
+   "title": "Empty Flux 2 Latent (batch_size = počet variant)"
+  }
+ },
+ "19": {
+  "class_type": "Flux2Scheduler",
+  "inputs": {
+   "steps": 20,
+   "width": [
+    "9",
+    0
+   ],
+   "height": [
+    "9",
+    1
+   ]
+  },
+  "_meta": {
+   "title": "Kroky (base: 16–30)"
+  }
+ },
+ "20": {
+  "class_type": "KSamplerSelect",
+  "inputs": {
+   "sampler_name": "euler"
+  }
+ },
+ "21": {
+  "class_type": "RandomNoise",
+  "inputs": {
+   "noise_seed": 20261103
+  },
+  "_meta": {
+   "title": "Seed"
+  }
+ },
+ "22": {
+  "class_type": "CFGGuider",
+  "inputs": {
+   "cfg": 4.0,
+   "model": [
+    "2",
+    0
+   ],
+   "positive": [
+    "15",
+    0
+   ],
+   "negative": [
+    "17",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "CFG 4 (base: 3–5)"
+  }
+ },
+ "23": {
+  "class_type": "SamplerCustomAdvanced",
+  "inputs": {
+   "noise": [
+    "21",
+    0
+   ],
+   "guider": [
+    "22",
+    0
+   ],
+   "sampler": [
+    "20",
+    0
+   ],
+   "sigmas": [
+    "19",
+    0
+   ],
+   "latent_image": [
+    "18",
+    0
+   ]
+  }
+ },
+ "24": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "23",
+    0
+   ],
+   "vae": [
+    "4",
+    0
+   ]
+  }
+ },
+ "25": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "filename_prefix": "modelka/headswap_base",
+   "images": [
+    "24",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VÝSLEDOK"
+  }
+ },
+ "26": {
+  "class_type": "ImageStitch",
+  "inputs": {
+   "direction": "right",
+   "match_image_size": true,
+   "spacing_width": 8,
+   "spacing_color": "white",
+   "image1": [
+    "7",
+    0
+   ],
+   "image2": [
+    "24",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Porovnanie telo | výsledok"
+  }
+ },
+ "27": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "26",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Náhľad porovnania"
+  }
+ }
+}

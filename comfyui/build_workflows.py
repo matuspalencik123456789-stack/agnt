@@ -289,6 +289,34 @@ NOTE_16GB = """# ⚠️ Verzia pre Mac so 16 GB RAM
 
 """
 
+NEG_PROMPT = (
+    "cartoon, anime, illustration, drawing, painting, 3d render, cgi, digital art, plastic skin, "
+    "airbrushed skin, overly smooth skin, wax figure, doll face, oversaturated colors, harsh contrast, "
+    "blurry, low quality, jpeg artifacts, deformed face, asymmetric eyes, visible seam on the neck"
+)
+
+NOTE_BASE = """# Realistická verzia: FLUX.2 Klein 4B **BASE** (nedestilovaný)
+Rovnaká fúzia ako workflow 01, ale s pomalším modelom, ktorý dáva prirodzenejšiu pokožku
+a **berie negatívny prompt** (CFG > 1).
+
+## Model navyše (stiahnuť raz, 7.8 GB)
+[flux-2-klein-base-4b.safetensors](https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-base-4b.safetensors) → `models/diffusion_models/`
+(ostatné súbory sú rovnaké ako vo workflow 01). Nepoužívaj `-fp8` verziu – na Macu s LoRA padá.
+
+## Nastavenia (oficiálna šablóna ComfyUI pre Klein 4B base: euler, 20 krokov, CFG 5)
+- **Kroky 20** (16 = rýchlejšie, 30 = o niečo detailnejšie).
+- **CFG 4** – nižšie (3–3.5) = prirodzenejšie farby, vyššie (5) = presnejšie drží prompt, ale „AI“ kontrast.
+- **Negatívny prompt** tu funguje – dopíš doň, čo nechceš vidieť.
+- Fotky 0.75 MP (16 GB Mac). Pri *out of memory* daj 0.6.
+
+## Rýchlosť
+Base robí pri CFG > 1 dva prechody modelom na krok → 20 krokov ≈ **10× dlhšie** než 4-krokový workflow 01.
+Najprv si nájdi dobrý seed vo workflow 01, potom finálnu verziu sprav tu.
+
+---
+
+"""
+
 NOTE_02 = """# Záložný workflow: ReActor + Flux.1 dev doladenie
 Funguje **len s modelmi, ktoré už máš** (inswapper_128 + flux1-dev-fp8).
 Kvalitou je pod workflow 01 (inswapper má rozlíšenie tváre len 128 px), ale je rýchly.
@@ -308,11 +336,12 @@ Kvalitou je pod workflow 01 (inswapper má rozlíšenie tváre len 128 px), ale 
 """
 
 
-def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None):
+def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None, base=False):
     g = Graph()
     # --- models
     unet = g.add("UNETLoader", {"unet_name": unet_name, "weight_dtype": "default"},
-                 pos=(0, 0), size=(360, 90), title="Model: FLUX.2 Klein 4B")
+                 pos=(0, 0), size=(360, 90),
+                 title="Model: FLUX.2 Klein 4B BASE (nedestilovaný)" if base else "Model: FLUX.2 Klein 4B")
     lora = g.add("LoraLoaderModelOnly", {"lora_name": "bfs_head_v1_flux-klein_4b.safetensors",
                                          "strength_model": 1.0},
                  pos=(0, 140), size=(360, 90), title="BFS Head Swap LoRA (sila 0.8–1.3)", model=(unet, 0))
@@ -344,8 +373,12 @@ def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None):
     # --- prompt + references
     pos_c = g.add("CLIPTextEncode", {"text": BFS_PROMPT}, pos=(1260, 0), size=(420, 260),
                   title="Prompt (BFS head_swap – nemeň začiatok)", clip=(clip, 0))
-    neg_c = g.add("ConditioningZeroOut", {}, pos=(1260, 320), size=(300, 30), title="Negatív (prázdny, CFG 1)",
-                  conditioning=(pos_c, 0))
+    if base:
+        neg_c = g.add("CLIPTextEncode", {"text": NEG_PROMPT}, pos=(1260, 320), size=(420, 180),
+                      title="Negatívny prompt (čo NECHCEŠ vidieť)", color="#322", bgcolor="#533", clip=(clip, 0))
+    else:
+        neg_c = g.add("ConditioningZeroOut", {}, pos=(1260, 320), size=(300, 30),
+                      title="Negatív (prázdny, CFG 1)", conditioning=(pos_c, 0))
     pos_r1 = g.add("ReferenceLatent", {}, pos=(1740, 0), size=(260, 50), title="+ Picture 1 (telo)",
                    conditioning=(pos_c, 0), latent=(body_l, 0))
     pos_r2 = g.add("ReferenceLatent", {}, pos=(1740, 100), size=(260, 50), title="+ Picture 2 (tvár)",
@@ -361,12 +394,15 @@ def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None):
     latent = g.add("EmptyFlux2LatentImage", {"width": 1024, "height": 1024, "batch_size": 1},
                    pos=(2100, 0), size=(300, 110), title="Empty Flux 2 Latent (batch_size = počet variant)",
                    width=(size, 0), height=(size, 1))
-    sched = g.add("Flux2Scheduler", {"steps": 4, "width": 1024, "height": 1024}, pos=(2100, 160),
-                  size=(300, 110), title="Kroky (distilled Klein: 4)", width=(size, 0), height=(size, 1))
+    sched = g.add("Flux2Scheduler", {"steps": 20 if base else 4, "width": 1024, "height": 1024},
+                  pos=(2100, 160), size=(300, 110),
+                  title="Kroky (base: 16–30)" if base else "Kroky (distilled Klein: 4)",
+                  width=(size, 0), height=(size, 1))
     sampler = g.add("KSamplerSelect", {"sampler_name": "euler"}, pos=(2100, 320), size=(300, 60))
     noise = g.add("RandomNoise", {"noise_seed": 20261103, "*control*": "randomize"}, pos=(2100, 430),
                   size=(300, 90), title="Seed")
-    guider = g.add("CFGGuider", {"cfg": 1.0}, pos=(2100, 570), size=(300, 100), title="CFG 1.0 (distilled)",
+    guider = g.add("CFGGuider", {"cfg": 4.0 if base else 1.0}, pos=(2100, 570), size=(300, 100),
+                   title="CFG 4 (base: 3–5)" if base else "CFG 1.0 (distilled)",
                    model=(lora, 0), positive=(pos_r2, 0), negative=(neg_r2, 0))
     samp = g.add("SamplerCustomAdvanced", {}, pos=(2460, 0), size=(280, 130), noise=(noise, 0),
                  guider=(guider, 0), sampler=(sampler, 0), sigmas=(sched, 0), latent_image=(latent, 0))
@@ -374,7 +410,8 @@ def build_01(unet_name="flux-2-klein-4b.safetensors", mp=1.0, note=None):
     g.group("4 · Generovanie", [latent, sched, sampler, noise, guider, samp, dec], ORANGE)
 
     # --- output
-    save = g.add("SaveImage", {"filename_prefix": "modelka/headswap"}, pos=(2840, 0), size=(460, 620),
+    save = g.add("SaveImage", {"filename_prefix": "modelka/headswap_base" if base else "modelka/headswap"},
+                 pos=(2840, 0), size=(460, 620),
                  title="VÝSLEDOK", images=(dec, 0))
     stitch = g.add("ImageStitch", {"direction": "right", "match_image_size": True, "spacing_width": 8,
                                    "spacing_color": "white"},
@@ -442,6 +479,8 @@ def main():
         ("01_modelka_telo+tvar_flux2klein_BFS_16GB",
          lambda: build_01("flux-2-klein-4b.safetensors", 0.75, NOTE_16GB + NOTE_01)),
         ("01_modelka_telo+tvar_flux2klein_BFS", build_01),
+        ("03_modelka_telo+tvar_flux2klein_BASE_realisticka_16GB",
+         lambda: build_01("flux-2-klein-base-4b.safetensors", 0.75, NOTE_BASE + NOTE_01, base=True)),
         ("02_modelka_telo+tvar_reactor_zaloha", build_02),
     ]:
         g = builder()

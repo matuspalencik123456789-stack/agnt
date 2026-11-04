@@ -2,8 +2,9 @@
 # Stiahne modely + workflow pre "telo z fotky 1 + tvár z fotky 2" (FLUX.2 Klein 4B + BFS)
 # do existujúcej inštalácie ComfyUI. Verzia pre Mac (bf16 model – fp8 na Macu s LoRA padá).
 #
-# Použitie:  bash stiahni_modely_mac.sh /cesta/k/ComfyUI
-# Bez argumentu skúsi ~/ComfyUI. Prerušené sťahovanie sa pri ďalšom spustení dokončí.
+# Použitie:  bash stiahni_modely_mac.sh /cesta/k/ComfyUI [base]
+#   base = stiahni aj nedestilovaný Klein 4B base (+7.8 GB) pre realistický workflow 03.
+# Bez cesty skúsi ~/ComfyUI. Prerušené sťahovanie sa pri ďalšom spustení dokončí.
 set -euo pipefail
 
 BRANCH_RAW="https://raw.githubusercontent.com/matuspalencik123456789-stack/agnt/claude/lucid-goldberg-86v1xi/comfyui/workflows"
@@ -45,6 +46,10 @@ main() {
     "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors"
   dl loras bfs_head_v1_flux-klein_4b.safetensors 369644384 \
     "https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors"
+  if [[ "${2:-}" == "base" ]]; then
+    dl diffusion_models flux-2-klein-base-4b.safetensors 7751105712 \
+      "https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-base-4b.safetensors"
+  fi
 
   # Workflowy -> ComfyUI bočný panel "Workflows"
   local wf="$COMFY/user/default/workflows"
@@ -53,6 +58,8 @@ main() {
     "$BRANCH_RAW/01_modelka_telo%2Btvar_flux2klein_BFS_16GB.json"
   curl -L --fail -s -o "$wf/modelka_telo+tvar_reactor_zaloha.json" \
     "$BRANCH_RAW/02_modelka_telo%2Btvar_reactor_zaloha.json"
+  curl -L --fail -s -o "$wf/modelka_telo+tvar_BASE_realisticka.json" \
+    "$BRANCH_RAW/03_modelka_telo%2Btvar_flux2klein_BASE_realisticka_16GB.json"
   echo "✓ workflowy uložené do $wf"
 
   if [[ -f "$COMFY/models/diffusion_models/flux-2-klein-4b-fp8.safetensors" ]]; then
