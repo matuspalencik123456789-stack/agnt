@@ -1,0 +1,361 @@
+{
+ "id": "9a3afaa0-000b-5499-a20b-62d2cbd77047",
+ "revision": 0,
+ "last_node_id": 6,
+ "last_link_id": 4,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_ref1.png",
+    "image"
+   ],
+   "title": "REF 1 – tvár zblízka",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 2,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    480
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_ref2.png",
+    "image"
+   ],
+   "title": "REF 2 – 3/4 alebo polcelok",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 3,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    960
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_ref3.png",
+    "image"
+   ],
+   "title": "REF 3 – celá postava",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 4,
+   "type": "ByteDanceSeedreamNodeV3",
+   "pos": [
+    420,
+    0
+   ],
+   "size": [
+    440,
+    620
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "image_1",
+     "name": "model.images.image_1",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "label": "image_2",
+     "name": "model.images.image_2",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 2
+    },
+    {
+     "label": "image_3",
+     "name": "model.images.image_3",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 3
+    },
+    {
+     "label": "image_4",
+     "name": "model.images.image_4",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ByteDanceSeedreamNodeV3"
+   },
+   "widgets_values": [
+    "PERSONA: The woman in image 1, image 2 and image 3 is one and the same person. Keep her face, facial proportions, eye color, eyebrows, nose, lips, skin tone, hair color and hairstyle exactly identical to the reference images.\n\nSCENE: She is sitting at a small table in a sunny café, holding a cup of coffee, wearing a cream knit sweater and small gold hoop earrings, laughing naturally while looking slightly away from the camera.\n\nSTYLE: candid smartphone photo like a real Instagram post, natural daylight, real unretouched skin with visible pores, no beauty filter, slight phone-camera grain.",
+    "seedream 5.0 lite",
+    "(2K) 1728x2304 (3:4)",
+    1728,
+    2304,
+    1,
+    false,
+    42,
+    "randomize",
+    false,
+    true
+   ],
+   "widgets_values_named": {
+    "prompt": "PERSONA: The woman in image 1, image 2 and image 3 is one and the same person. Keep her face, facial proportions, eye color, eyebrows, nose, lips, skin tone, hair color and hairstyle exactly identical to the reference images.\n\nSCENE: She is sitting at a small table in a sunny café, holding a cup of coffee, wearing a cream knit sweater and small gold hoop earrings, laughing naturally while looking slightly away from the camera.\n\nSTYLE: candid smartphone photo like a real Instagram post, natural daylight, real unretouched skin with visible pores, no beauty filter, slight phone-camera grain.",
+    "model": "seedream 5.0 lite",
+    "model.size_preset": "(2K) 1728x2304 (3:4)",
+    "model.width": 1728,
+    "model.height": 2304,
+    "model.max_images": 1,
+    "model.fail_on_partial": false,
+    "model.seed": 42,
+    "control_after_generate": "randomize",
+    "model.watermark": false,
+    "model.thinking": true
+   },
+   "title": "Seedream 5.0 – NOVÁ FOTKA (meň len SCENE:)",
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 5,
+   "type": "SaveImage",
+   "pos": [
+    940,
+    0
+   ],
+   "size": [
+    460,
+    680
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 4
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "persona/03_foto"
+   ],
+   "title": "NOVÁ FOTKA"
+  },
+  {
+   "id": 6,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    1480
+   ],
+   "size": [
+    1400,
+    720
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# Persona – KROK 3: Nové fotky (vždy tá istá tvár)\n1. **REF 1–3**: nahraj 3 fotky z identity packu (z workflow 05). Pri každej fotke vždy tie isté.\n2. V prompte meníš **len časť `SCENE:`** (kde je, čo robí, čo má oblečené, výraz).\n   `PERSONA:` a `STYLE:` nechaj rovnaké. Zapíš si tam pevné detaily (napr. znamienko, tetovanie).\n3. **Run** → `output/persona/03_foto_…`.\n\nTipy:\n- Na Instagram feed `(2K) 1728x2304 (3:4)`. Ak z fotky budeš robiť video na Reels/TikTok, prepni na `(2K) 1600x2848 (9:16)`.\n- `max_images` 2–4 = viac variant naraz (každá sa platí).\n- Ak sa tvár začne „rozchádzať“, vymeň REF za lepšie fotky, nie prompt.\n- Oblečenie/miesto môžeš dať aj ako ďalšiu referenciu (image 4) a napísať do SCENE: *wearing the outfit from image 4*.\n\n## Cloud = platíš kreditmi\nTieto uzly bežia na serveroch ByteDance/Kling cez Comfy účet (vpravo hore **Sign in** + kredit).\nCenu ukazuje štítok na uzle. Každé **Run** = nová platba.\n\n## Pravidlá\nTvár persony musí byť **vymyslená AI tvár** (alebo tvoja / človeka so súhlasom).\nŽiadne známe osoby. Na sociálnych sieťach zapni označenie AI (Instagram *AI-generated profile*, TikTok *AIGC* label).\n"
+   ],
+   "title": "NÁVOD (čítaj prvé)",
+   "color": "#432",
+   "bgcolor": "#653"
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   4,
+   1,
+   "IMAGE"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   2,
+   "IMAGE"
+  ],
+  [
+   4,
+   4,
+   0,
+   5,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "1 · Identity pack (vždy tie isté 3 fotky)",
+   "bounding": [
+    -40,
+    -80,
+    420,
+    1500
+   ],
+   "color": "#3f9e5a",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "2 · Nová fotka persony",
+   "bounding": [
+    380,
+    -80,
+    520,
+    740
+   ],
+   "color": "#8a5ab4",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "3 · Výstup",
+   "bounding": [
+    900,
+    -80,
+    540,
+    800
+   ],
+   "color": "#444444",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    80,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}

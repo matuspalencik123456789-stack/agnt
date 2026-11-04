@@ -1,0 +1,491 @@
+{
+ "id": "829162fc-790a-5741-85cc-b227ade09846",
+ "revision": 0,
+ "last_node_id": 8,
+ "last_link_id": 5,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_foto.png",
+    "image"
+   ],
+   "title": "A · PRVÝ SNÍMOK (fotka z workflow 06)",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 2,
+   "type": "Kling4ImageToVideoNode",
+   "pos": [
+    420,
+    0
+   ],
+   "size": [
+    440,
+    560
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "model.first_frame",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "name": "model.middle_frames.middle_frame_1",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "model.last_frame",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Kling4ImageToVideoNode"
+   },
+   "widgets_values": [
+    "kling-4.0",
+    "@Image1 is the first frame. She slowly turns her head toward the camera, smiles softly and tucks a strand of hair behind her ear, then takes a sip of coffee. Gentle handheld smartphone camera, natural daylight, realistic motion. Keep her face, hair, outfit and the background exactly as in @Image1, no morphing, no change of her face.",
+    "720p",
+    5,
+    42,
+    "randomize",
+    "fixed"
+   ],
+   "widgets_values_named": {
+    "model": "kling-4.0",
+    "model.prompt": "@Image1 is the first frame. She slowly turns her head toward the camera, smiles softly and tucks a strand of hair behind her ear, then takes a sip of coffee. Gentle handheld smartphone camera, natural daylight, realistic motion. Keep her face, hair, outfit and the background exactly as in @Image1, no morphing, no change of her face.",
+    "model.resolution": "720p",
+    "model.duration": 5,
+    "model.seed": 42,
+    "control_after_generate#1": "randomize",
+    "control_after_generate": "fixed"
+   },
+   "title": "A · Kling 4.0 – fotka → video",
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 3,
+   "type": "SaveVideo",
+   "pos": [
+    920,
+    0
+   ],
+   "size": [
+    460,
+    560
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 2
+    }
+   ],
+   "outputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    "video/persona_A",
+    "mp4",
+    "auto",
+    "auto"
+   ],
+   "widgets_values_named": {
+    "filename_prefix": "video/persona_A",
+    "format": "mp4",
+    "format.codec": "auto",
+    "codec": "auto"
+   },
+   "title": "VIDEO VÝSLEDOK"
+  },
+  {
+   "id": 4,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    760
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_ref1.png",
+    "image"
+   ],
+   "title": "B · REF 1 – tvár zblízka",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 5,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    1240
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      4
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_ref3.png",
+    "image"
+   ],
+   "title": "B · REF 2 – celá postava",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 6,
+   "type": "Kling4ReferenceToVideoNode",
+   "pos": [
+    420,
+    760
+   ],
+   "size": [
+    440,
+    640
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "model.reference_images.image_1",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 3
+    },
+    {
+     "name": "model.reference_images.image_2",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 4
+    },
+    {
+     "name": "model.reference_images.image_3",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "model.reference_videos.video_1",
+     "shape": 7,
+     "type": "VIDEO",
+     "link": null
+    },
+    {
+     "name": "model.reference_videos.video_2",
+     "shape": 7,
+     "type": "VIDEO",
+     "link": null
+    },
+    {
+     "name": "model.first_frame",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    },
+    {
+     "name": "model.last_frame",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      5
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "Kling4ReferenceToVideoNode"
+   },
+   "widgets_values": [
+    "kling-4.0",
+    "The woman from @Image1 and @Image2 is one person: keep her face, hair and body exactly as in the references. She walks along a sunny beach promenade at golden hour in a white linen dress, laughs and looks back over her shoulder at the camera. Smartphone vlog style, natural handheld movement, realistic lighting and skin.",
+    "720p",
+    "9:16",
+    5,
+    42,
+    "randomize",
+    "randomize"
+   ],
+   "widgets_values_named": {
+    "model": "kling-4.0",
+    "model.prompt": "The woman from @Image1 and @Image2 is one person: keep her face, hair and body exactly as in the references. She walks along a sunny beach promenade at golden hour in a white linen dress, laughs and looks back over her shoulder at the camera. Smartphone vlog style, natural handheld movement, realistic lighting and skin.",
+    "model.resolution": "720p",
+    "model.aspect_ratio": "9:16",
+    "model.duration": 5,
+    "model.seed": 42,
+    "control_after_generate#1": "randomize",
+    "control_after_generate": "randomize"
+   },
+   "title": "B · Kling 4.0 – referencie → video (vypnuté)",
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 7,
+   "type": "SaveVideo",
+   "pos": [
+    920,
+    760
+   ],
+   "size": [
+    460,
+    560
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 4,
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 5
+    }
+   ],
+   "outputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "links": [],
+     "slot_index": 0
+    }
+   ],
+   "properties": {},
+   "widgets_values": [
+    "video/persona_B",
+    "mp4",
+    "auto",
+    "auto"
+   ],
+   "widgets_values_named": {
+    "filename_prefix": "video/persona_B",
+    "format": "mp4",
+    "format.codec": "auto",
+    "codec": "auto"
+   },
+   "title": "VIDEO VÝSLEDOK"
+  },
+  {
+   "id": 8,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    1760
+   ],
+   "size": [
+    1380,
+    760
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# Persona – KROK 4: Video (Kling 4.0)\n**Seedance (video od ByteDance) realistické tváre ako referenciu odmieta**, preto video robí **Kling 4.0**.\n\n## A) Fotka → video (zapnuté, najvernejšia tvár)\n1. **PRVÝ SNÍMOK**: fotka persony z workflow 06 (pre Reels/TikTok vygeneruj fotku v 9:16).\n2. V prompte opíš **pohyb** (čo robí, ako sa hýbe kamera). `@Image1` = prvý snímok.\n3. **Run** → `output/video/persona_…mp4`. Kling pridá aj zvuk.\n\n## B) Referencie → video (vypnuté, voľnejšia scéna)\nPostava z identity packu v **novej scéne** bez prvého snímku. Tvár drží menej presne ako A.\nZapni: vyber oba uzly skupiny B a stlač **Ctrl+B** (bypass off). Potom A vypni, inak zaplatíš obe.\n\n- Cena: 720p ≈ 0.22 $/s (5 s ≈ 1.12 $), 1080p ≈ 0.34 $/s. Dĺžka 3–30 s.\n\n## Cloud = platíš kreditmi\nTieto uzly bežia na serveroch ByteDance/Kling cez Comfy účet (vpravo hore **Sign in** + kredit).\nCenu ukazuje štítok na uzle. Každé **Run** = nová platba.\n\n## Pravidlá\nTvár persony musí byť **vymyslená AI tvár** (alebo tvoja / človeka so súhlasom).\nŽiadne známe osoby. Na sociálnych sieťach zapni označenie AI (Instagram *AI-generated profile*, TikTok *AIGC* label).\n"
+   ],
+   "title": "NÁVOD (čítaj prvé)",
+   "color": "#432",
+   "bgcolor": "#653"
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "VIDEO"
+  ],
+  [
+   3,
+   4,
+   0,
+   6,
+   0,
+   "IMAGE"
+  ],
+  [
+   4,
+   5,
+   0,
+   6,
+   1,
+   "IMAGE"
+  ],
+  [
+   5,
+   6,
+   0,
+   7,
+   0,
+   "VIDEO"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "A · Fotka → video (zapnuté)",
+   "bounding": [
+    -40,
+    -80,
+    1460,
+    680
+   ],
+   "color": "#b06634",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "B · Referencie → video (zapni Ctrl+B, A vypni)",
+   "bounding": [
+    -40,
+    680,
+    1460,
+    1020
+   ],
+   "color": "#3f789e",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    80,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}

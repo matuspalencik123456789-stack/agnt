@@ -6,9 +6,10 @@
 | `workflows/01_modelka_telo+tvar_flux2klein_BFS.json` | To isté pre 24 GB+ (bf16 model, 1 MP). Len core uzly. |
 | `stiahni_modely_mac.sh` | Stiahne modely do správnych priečinkov a vloží workflowy do ComfyUI. |
 | `workflows/03_modelka_telo+tvar_flux2klein_BASE_realisticka_16GB.json` | **Najrealistickejší.** Klein 4B *base*: CFG 4, 20 krokov, funkčný negatívny prompt. ~10× pomalší než 01. |
+| `workflows/04–07_persona_*` | **Cloud linka (Seedream 5.0 + Kling 4.0):** fúzia → identity pack → nové fotky → video. Platí sa kreditmi Comfy účtu. Postup a stratégia: [`PERSONA_IMPERIUM.md`](PERSONA_IMPERIUM.md). |
 | `workflows/02_modelka_telo+tvar_reactor_zaloha.json` | Záloha s modelmi, ktoré už máš (ReActor + Flux.1 dev). Slabšia kvalita, licencia len nekomerčná. |
 | `workflows/api/*.api.json` | Na skriptovanie cez `/prompt` API. Do UI ich nepreťahuj. |
-| `build_workflows.py` | Generátor. Po úprave spusti `python3 comfyui/build_workflows.py`. |
+| `build_workflows.py`, `build_persona_workflows.py` | Generátory. Po úprave spusti `python3 comfyui/build_workflows.py` a `python3 comfyui/build_persona_workflows.py`. |
 
 Do ComfyUI: pretiahni `.json` (bez `.api`) do okna prehliadača.
 

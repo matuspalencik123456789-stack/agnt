@@ -1,0 +1,247 @@
+{
+ "id": "5a34e365-1ca5-5cb7-9bba-ee4b4c86e2a9",
+ "revision": 0,
+ "last_node_id": 4,
+ "last_link_id": 2,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "persona_fuzia.png",
+    "image"
+   ],
+   "title": "PERSONA – vybraná fúzia (z workflow 04)",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 2,
+   "type": "ByteDanceSeedreamNodeV3",
+   "pos": [
+    420,
+    0
+   ],
+   "size": [
+    440,
+    620
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "image_1",
+     "name": "model.images.image_1",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "label": "image_2",
+     "name": "model.images.image_2",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ByteDanceSeedreamNodeV3"
+   },
+   "widgets_values": [
+    "Create 4 separate photos of exactly the same woman as in image 1: identical face, eye color, nose, lips, skin tone, hair color, hairstyle and body type. These are reference photos of one person:\n1. Close-up portrait, facing the camera, neutral relaxed expression.\n2. Three-quarter view portrait, head turned slightly to her left, soft smile.\n3. Side profile facing right.\n4. Full-body photo, standing in a relaxed pose, wearing a simple fitted black top and blue jeans.\nAll 4 photos: plain light grey studio background, soft even daylight, real unretouched photographs with natural skin texture and visible pores, sharp focus.",
+    "seedream 5.0 lite",
+    "(2K) 1728x2304 (3:4)",
+    1728,
+    2304,
+    4,
+    false,
+    42,
+    "randomize",
+    false,
+    true
+   ],
+   "widgets_values_named": {
+    "prompt": "Create 4 separate photos of exactly the same woman as in image 1: identical face, eye color, nose, lips, skin tone, hair color, hairstyle and body type. These are reference photos of one person:\n1. Close-up portrait, facing the camera, neutral relaxed expression.\n2. Three-quarter view portrait, head turned slightly to her left, soft smile.\n3. Side profile facing right.\n4. Full-body photo, standing in a relaxed pose, wearing a simple fitted black top and blue jeans.\nAll 4 photos: plain light grey studio background, soft even daylight, real unretouched photographs with natural skin texture and visible pores, sharp focus.",
+    "model": "seedream 5.0 lite",
+    "model.size_preset": "(2K) 1728x2304 (3:4)",
+    "model.width": 1728,
+    "model.height": 2304,
+    "model.max_images": 4,
+    "model.fail_on_partial": false,
+    "model.seed": 42,
+    "control_after_generate": "randomize",
+    "model.watermark": false,
+    "model.thinking": true
+   },
+   "title": "Seedream 5.0 – REFERENČNÁ SADA (4 uhly)",
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 3,
+   "type": "SaveImage",
+   "pos": [
+    940,
+    0
+   ],
+   "size": [
+    700,
+    680
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 2
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "persona/02_referencie"
+   ],
+   "title": "IDENTITY PACK – vyber 3 najlepšie"
+  },
+  {
+   "id": 4,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    1000
+   ],
+   "size": [
+    1640,
+    640
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# Persona – KROK 2: Referenčná sada („pamäť“ persony)\nZ jednej fotky persony vytvorí **4 fotky tej istej osoby** z rôznych uhlov (zblízka, 3/4, profil, celá postava).\nTieto fotky sú jej **pamäť**: v každom ďalšom generovaní ich dávaš ako referencie, a tak tvár zostane rovnaká.\n\n1. **PERSONA – vybraná fúzia**: nahraj najlepší výsledok z workflow 04 (`output/persona/01_fuzia_…`).\n2. **Run** → `output/persona/02_referencie_…` (1–4 obrázky, model rozhodne).\n3. Vyber **3 najlepšie** (ideálne: tvár zblízka, polcelok/3/4, celá postava).\n   Ulož si ich do priečinka `persona_MENO/` a už ich **nemeň**. To je tvoja „identity pack“.\n\nAk niektorá fotka tvár zmení, nepoužívaj ju. Radšej spusti znova.\n\n## Cloud = platíš kreditmi\nTieto uzly bežia na serveroch ByteDance/Kling cez Comfy účet (vpravo hore **Sign in** + kredit).\nCenu ukazuje štítok na uzle. Každé **Run** = nová platba.\n\n## Pravidlá\nTvár persony musí byť **vymyslená AI tvár** (alebo tvoja / človeka so súhlasom).\nŽiadne známe osoby. Na sociálnych sieťach zapni označenie AI (Instagram *AI-generated profile*, TikTok *AIGC* label).\n"
+   ],
+   "title": "NÁVOD (čítaj prvé)",
+   "color": "#432",
+   "bgcolor": "#653"
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   2,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "1 · Persona",
+   "bounding": [
+    -40,
+    -80,
+    420,
+    540
+   ],
+   "color": "#3f9e5a",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "2 · Referenčná sada",
+   "bounding": [
+    380,
+    -80,
+    520,
+    740
+   ],
+   "color": "#8a5ab4",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "3 · Výstup",
+   "bounding": [
+    900,
+    -80,
+    780,
+    800
+   ],
+   "color": "#444444",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    80,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}

@@ -60,6 +60,10 @@ main() {
     "$BRANCH_RAW/02_modelka_telo%2Btvar_reactor_zaloha.json"
   curl -L --fail -s -o "$wf/modelka_telo+tvar_BASE_realisticka.json" \
     "$BRANCH_RAW/03_modelka_telo%2Btvar_flux2klein_BASE_realisticka_16GB.json"
+  for w in 04_persona_1_fuzia_seedream 05_persona_2_referencna_sada_seedream \
+           06_persona_3_nove_fotky_seedream 07_persona_4_video_kling; do
+    curl -L --fail -s -o "$wf/$w.json" "$BRANCH_RAW/$w.json"
+  done
   echo "✓ workflowy uložené do $wf"
 
   if [[ -f "$COMFY/models/diffusion_models/flux-2-klein-4b-fp8.safetensors" ]]; then

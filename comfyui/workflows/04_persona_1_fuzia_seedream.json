@@ -1,0 +1,304 @@
+{
+ "id": "063848f3-0e90-561e-a4c9-234ee6dda2a0",
+ "revision": 0,
+ "last_node_id": 5,
+ "last_link_id": 3,
+ "nodes": [
+  {
+   "id": 1,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    0
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 0,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      1
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "telo.png",
+    "image"
+   ],
+   "title": "FOTKA 1 – TELO (image 1)",
+   "color": "#232",
+   "bgcolor": "#353"
+  },
+  {
+   "id": 2,
+   "type": "LoadImage",
+   "pos": [
+    0,
+    480
+   ],
+   "size": [
+    340,
+    420
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      2
+     ],
+     "slot_index": 0
+    },
+    {
+     "name": "MASK",
+     "type": "MASK",
+     "links": [],
+     "slot_index": 1
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "LoadImage"
+   },
+   "widgets_values": [
+    "tvar.png",
+    "image"
+   ],
+   "title": "FOTKA 2 – TVÁR (image 2)",
+   "color": "#223",
+   "bgcolor": "#335"
+  },
+  {
+   "id": 3,
+   "type": "ByteDanceSeedreamNodeV3",
+   "pos": [
+    420,
+    0
+   ],
+   "size": [
+    440,
+    620
+   ],
+   "flags": {},
+   "order": 2,
+   "mode": 0,
+   "inputs": [
+    {
+     "label": "image_1",
+     "name": "model.images.image_1",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 1
+    },
+    {
+     "label": "image_2",
+     "name": "model.images.image_2",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": 2
+    },
+    {
+     "label": "image_3",
+     "name": "model.images.image_3",
+     "shape": 7,
+     "type": "IMAGE",
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "name": "IMAGE",
+     "type": "IMAGE",
+     "links": [
+      3
+     ],
+     "slot_index": 0
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "ByteDanceSeedreamNodeV3"
+   },
+   "widgets_values": [
+    "Image 1 is the base photo, image 2 is the face reference.\nKeep everything from image 1 exactly as it is: body, body proportions, pose, clothing, background, framing, camera angle and lighting.\nReplace only the head and face with the person from image 2: identical face shape, eyes and eye color, eyebrows, nose, lips, skin tone and hairstyle. Match the head size and angle to the body and blend the neck and skin tone seamlessly, so it looks like one real photograph.\nThe result must look like a real, unretouched photo: natural skin texture with visible pores, realistic hair strands, natural light, no beauty filter.",
+    "seedream 5.0 lite",
+    "(2K) 1728x2304 (3:4)",
+    1728,
+    2304,
+    1,
+    false,
+    42,
+    "randomize",
+    false,
+    true
+   ],
+   "widgets_values_named": {
+    "prompt": "Image 1 is the base photo, image 2 is the face reference.\nKeep everything from image 1 exactly as it is: body, body proportions, pose, clothing, background, framing, camera angle and lighting.\nReplace only the head and face with the person from image 2: identical face shape, eyes and eye color, eyebrows, nose, lips, skin tone and hairstyle. Match the head size and angle to the body and blend the neck and skin tone seamlessly, so it looks like one real photograph.\nThe result must look like a real, unretouched photo: natural skin texture with visible pores, realistic hair strands, natural light, no beauty filter.",
+    "model": "seedream 5.0 lite",
+    "model.size_preset": "(2K) 1728x2304 (3:4)",
+    "model.width": 1728,
+    "model.height": 2304,
+    "model.max_images": 1,
+    "model.fail_on_partial": false,
+    "model.seed": 42,
+    "control_after_generate": "randomize",
+    "model.watermark": false,
+    "model.thinking": true
+   },
+   "title": "Seedream 5.0 – FÚZIA (telo + tvár)",
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 4,
+   "type": "SaveImage",
+   "pos": [
+    940,
+    0
+   ],
+   "size": [
+    460,
+    680
+   ],
+   "flags": {},
+   "order": 3,
+   "mode": 0,
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 3
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "SaveImage"
+   },
+   "widgets_values": [
+    "persona/01_fuzia"
+   ],
+   "title": "PERSONA – výsledok fúzie"
+  },
+  {
+   "id": 5,
+   "type": "MarkdownNote",
+   "pos": [
+    0,
+    1000
+   ],
+   "size": [
+    1400,
+    700
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [],
+   "outputs": [],
+   "properties": {},
+   "widgets_values": [
+    "# Persona – KROK 1: Fúzia (Seedream 5.0 lite)\n**Telo z fotky 1 + tvár z fotky 2 → prvá fotka tvojej AI modelky.**\n\n1. **FOTKA 1 – TELO** a **FOTKA 2 – TVÁR** (poradie nemeň, prompt hovorí *image 1 = telo, image 2 = tvár*).\n2. **Run.** Výsledok sa uloží do `output/persona/01_fuzia_…`.\n3. Spúšťaj, kým nemáš fúziu, ktorá sa ti páči. **Toto bude tvár persony navždy.**\n4. Pokračuj workflowom **05 – Referenčná sada**.\n\n- Rozmer: `(2K) 1728x2304 (3:4)`. Iný pomer strán zmeníš v `size_preset`.\n- Tvár málo podobná fotke 2 → orež fotku 2 na hlavu a vlasy, použi ostrejšiu fotku.\n- ByteDance môže odmietnuť fotky, ktoré vyzerajú ako konkrétna reálna osoba.\n\n## Cloud = platíš kreditmi\nTieto uzly bežia na serveroch ByteDance/Kling cez Comfy účet (vpravo hore **Sign in** + kredit).\nCenu ukazuje štítok na uzle. Každé **Run** = nová platba.\n\n## Pravidlá\nTvár persony musí byť **vymyslená AI tvár** (alebo tvoja / človeka so súhlasom).\nŽiadne známe osoby. Na sociálnych sieťach zapni označenie AI (Instagram *AI-generated profile*, TikTok *AIGC* label).\n"
+   ],
+   "title": "NÁVOD (čítaj prvé)",
+   "color": "#432",
+   "bgcolor": "#653"
+  }
+ ],
+ "links": [
+  [
+   1,
+   1,
+   0,
+   3,
+   0,
+   "IMAGE"
+  ],
+  [
+   2,
+   2,
+   0,
+   3,
+   1,
+   "IMAGE"
+  ],
+  [
+   3,
+   3,
+   0,
+   4,
+   0,
+   "IMAGE"
+  ]
+ ],
+ "groups": [
+  {
+   "id": 1,
+   "title": "1 · Vstupné fotky",
+   "bounding": [
+    -40,
+    -80,
+    420,
+    1020
+   ],
+   "color": "#3f9e5a",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 2,
+   "title": "2 · Fúzia (Seedream 5.0 lite)",
+   "bounding": [
+    380,
+    -80,
+    520,
+    740
+   ],
+   "color": "#8a5ab4",
+   "font_size": 24,
+   "flags": {}
+  },
+  {
+   "id": 3,
+   "title": "3 · Výstup",
+   "bounding": [
+    900,
+    -80,
+    540,
+    800
+   ],
+   "color": "#444444",
+   "font_size": 24,
+   "flags": {}
+  }
+ ],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.6,
+   "offset": [
+    80,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}
