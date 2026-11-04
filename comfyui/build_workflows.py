@@ -311,7 +311,8 @@ a **berie negatívny prompt** (CFG > 1).
 
 ## Rýchlosť
 Base robí pri CFG > 1 dva prechody modelom na krok → 20 krokov ≈ **10× dlhšie** než 4-krokový workflow 01.
-Najprv si nájdi dobrý seed vo workflow 01, potom finálnu verziu sprav tu.
+Rýchlo si vo workflow 01 over, ktorá dvojica fotiek funguje (podobnosť, póza), a až tú pusti tu.
+Seed sa medzi 01 a 03 neprenáša – iný model = iný obrázok z rovnakého seedu.
 
 ---
 

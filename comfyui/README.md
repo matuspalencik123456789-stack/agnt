@@ -80,7 +80,7 @@ bash ~/stiahni_modely_mac.sh /cesta/k/ComfyUI base
 - Rovnaké zapojenie ako 01, iba namiesto destilovaného modelu je `flux-2-klein-base-4b.safetensors`,
   20 krokov, CFG 4 a skutočný negatívny prompt (cartoon, anime, plastic skin …).
 - Base pri CFG > 1 počíta pri každom kroku dva prechody modelom, teda 20 krokov ≈ 10× dlhšie než 4 kroky v 01.
-  Kompozíciu a seed si nájdi v 01, finálny obrázok sprav v 03.
+  V 01 si rýchlo over, ktorá dvojica fotiek funguje, a až tú pusti v 03. Seed sa medzi modelmi neprenáša.
 - CFG 3–3.5 = prirodzenejšie farby, 5 = presnejšie podľa promptu.
 
 ## 02 – záloha: ReActor (inswapper_128) + Flux.1 dev doladenie
