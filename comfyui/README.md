@@ -37,6 +37,24 @@ Keď niečo nejde:
 - **„MPS backend out of memory“** → v uzloch „→ 0.75 MP“ daj 0.6 a zavri ostatné aplikácie. Až potom skús
   `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 python main.py`. Pozor: táto premenná vypne limit pamäte a Mac môže zamrznúť.
 
+## Windows PC s NVIDIA (RTX 20xx a novšie) – PowerShell
+
+Portable verzia ComfyUI (Python 3.13 + PyTorch CUDA 13.0, podľa README ComfyUI). Ak sa nespustí, aktualizuj ovládač NVIDIA.
+
+```powershell
+winget install --id 7zip.7zip -e
+New-Item -ItemType Directory -Force C:\AI | Out-Null; Set-Location C:\AI
+curl.exe -L -o ComfyUI_portable.7z https://github.com/comfyanonymous/ComfyUI/releases/latest/download/ComfyUI_windows_portable_nvidia.7z
+& "C:\Program Files\7-Zip\7z.exe" x ComfyUI_portable.7z -oC:\AI
+$C = "C:\AI\ComfyUI_windows_portable\ComfyUI"
+curl.exe -L -C - -o "$C\models\diffusion_models\flux-2-klein-4b.safetensors" https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/diffusion_models/flux-2-klein-4b.safetensors
+curl.exe -L -C - -o "$C\models\text_encoders\qwen_3_4b.safetensors" https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
+curl.exe -L -C - -o "$C\models\vae\flux2-vae.safetensors" https://huggingface.co/Comfy-Org/Flux-2-Klein-4B/resolve/main/split_files/vae/flux2-vae.safetensors
+curl.exe -L -C - -o "$C\models\loras\bfs_head_v1_flux-klein_4b.safetensors" https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1_flux-klein_4b.safetensors
+Set-Location C:\AI\ComfyUI_windows_portable; .\run_nvidia_gpu.bat
+```
+Na PC použi workflow **01 bez „16GB“** (1 MP). Adresu http://127.0.0.1:8188 napíš do prehliadača ručne.
+
 ## 01 – FLUX.2 Klein 4B + BFS Head Swap LoRA
 
 Model je editačný a dostane obe fotky naraz: *Picture 1 = telo*, *Picture 2 = hlava*.
